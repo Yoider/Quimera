@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  icon        String
+  description String?
+  orderIndex  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  name         String
+  description  String
+  ingredients  String   // JSON encoded array of strings for universal SQLite/Postgres compatibility
+  price        Float
+  format       String   // e.g. "100grs", "Unidad", "Copa", "Caña", "Tapa"
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  imageUrl     String
+  allergens    String   // JSON encoded array of allergen strings
+  rating       Float    @default(5.0)
+  totalReviews Int      @default(0)
+  isAvailable  Boolean  @default(true)
+  badge        String?  // e.g. "Especialidad de la casa", "Top Ventas"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([isAvailable])
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  tableNumber String
+  status     String      @default("PENDING") // PENDING, PREPARING, SERVED, CANCELLED
+  notes      String?
+  totalAmount Float
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  items      OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int     @default(1)
+  unitPrice Float
+  notes     String?
+}
