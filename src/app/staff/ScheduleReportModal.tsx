@@ -9,8 +9,9 @@ import {
   WeekDemandConfig,
   INTENSITY_CONFIG,
 } from '@/lib/schedule/types';
-import { X, Copy, Check, Printer, FileText, Share2, Download, Image as ImageIcon } from 'lucide-react';
+import { X, Copy, Check, Printer, FileText, Share2, FileDown } from 'lucide-react';
 import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 
 interface ScheduleReportModalProps {
   isOpen: boolean;
@@ -136,25 +137,82 @@ export default function ScheduleReportModal({
     window.print();
   };
 
-  const handleDownloadImage = async () => {
+  const handleDownloadPdf = async () => {
     if (!reportRef.current) return;
     setIsDownloading(true);
+    let clone: HTMLElement | null = null;
     try {
-      const dataUrl = await toPng(reportRef.current, {
+      // Create an unconstrained off-screen clone with fixed presentation width
+      clone = reportRef.current.cloneNode(true) as HTMLElement;
+      clone.style.position = 'fixed';
+      clone.style.left = '-99999px';
+      clone.style.top = '0';
+      clone.style.width = '1200px';
+      clone.style.maxWidth = '1200px';
+      clone.style.height = 'auto';
+      clone.style.maxHeight = 'none';
+      clone.style.overflow = 'visible';
+      clone.style.backgroundColor = '#FAF8F5';
+      clone.style.padding = '36px 40px';
+      clone.style.zIndex = '-9999';
+
+      // Remove scrollbars from any inner containers in the clone
+      const scrollableElements = clone.querySelectorAll('.overflow-x-auto, .overflow-y-auto');
+      scrollableElements.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        htmlEl.style.overflow = 'visible';
+        htmlEl.style.maxWidth = 'none';
+        htmlEl.style.width = '100%';
+      });
+
+      // Ensure table inside clone takes 100% width
+      const table = clone.querySelector('table');
+      if (table) {
+        table.style.width = '100%';
+        table.style.minWidth = '100%';
+      }
+
+      document.body.appendChild(clone);
+
+      const dataUrl = await toPng(clone, {
         quality: 0.98,
-        pixelRatio: 2, // High resolution for crisp text & badges
+        pixelRatio: 2, // High resolution for crystal clear text & badges
         backgroundColor: '#FAF8F5',
         cacheBust: true,
       });
-      const link = document.createElement('a');
+
+      // Create pristine A4 Landscape PDF (297 x 210 mm)
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pageWidth = 297;
+      const pageHeight = 210;
+      const margin = 12;
+      const printWidth = pageWidth - margin * 2; // 273mm
+
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((res) => {
+        img.onload = res;
+      });
+
+      const imgHeight = (img.height * printWidth) / img.width;
+      const posY = imgHeight < pageHeight - margin * 2 ? (pageHeight - imgHeight) / 2 : margin;
+
+      pdf.addImage(dataUrl, 'PNG', margin, posY, printWidth, Math.min(imgHeight, pageHeight - margin * 2));
+
       const startStr = monday.toISOString().split('T')[0];
-      link.download = `cuadrante-quimera-${startStr}.png`;
-      link.href = dataUrl;
-      link.click();
+      pdf.save(`cuadrante-quimera-${startStr}.pdf`);
     } catch (err) {
-      console.error('Error generating image:', err);
-      alert('Error al generar la imagen del cuadrante.');
+      console.error('Error generating PDF:', err);
+      alert('Error al generar el documento PDF del cuadrante.');
     } finally {
+      if (clone && document.body.contains(clone)) {
+        document.body.removeChild(clone);
+      }
       setIsDownloading(false);
     }
   };
@@ -179,15 +237,15 @@ export default function ScheduleReportModal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Download as Image Button */}
+            {/* Download as PDF Button */}
             <button
-              onClick={handleDownloadImage}
+              onClick={handleDownloadPdf}
               disabled={isDownloading}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#9E2A2B] to-[#D4A373] hover:brightness-110 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50"
-              title="Descargar cuadrante en imagen PNG de alta resolución"
+              title="Descargar cuadrante oficial en documento PDF para imprimir o enviar"
             >
-              <Download className={`w-4 h-4 ${isDownloading ? 'animate-bounce' : ''}`} />
-              <span>{isDownloading ? 'Generando...' : 'Descargar Imagen (PNG)'}</span>
+              <FileDown className={`w-4 h-4 ${isDownloading ? 'animate-bounce' : ''}`} />
+              <span>{isDownloading ? 'Generando PDF...' : 'Descargar PDF'}</span>
             </button>
 
             {/* Copy for WhatsApp */}
@@ -241,22 +299,22 @@ export default function ScheduleReportModal({
             <table className="w-full text-left border-collapse text-xs md:text-sm">
               <thead>
                 <tr className="bg-[#FAF8F5] border-b border-stone-200 text-[#2B2523] font-serif font-bold">
-                  <th className="py-3 px-4">Trabajador / Rol</th>
+                  <th className="py-3 px-4 min-w-[190px] whitespace-nowrap">Trabajador / Rol</th>
                   {DAYS_OF_WEEK.map((d, idx) => (
                     <th
                       key={d.dayNumber}
-                      className={`py-3 px-3 text-center ${
+                      className={`py-3 px-2 text-center whitespace-nowrap ${
                         d.isClosed ? 'bg-stone-100 text-stone-400 font-normal' : ''
                       }`}
                     >
-                      <div>{d.name}</div>
+                      <div className="font-bold text-xs">{d.name}</div>
                       <div className="text-[10px] font-sans font-normal text-[#6E6259]">
                         {formatShortDay(monday, idx)}
                       </div>
                       {!d.isClosed && demandConfig && demandConfig[d.dayNumber] && (
                         <div className="mt-1">
                           <span
-                            className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${
+                            className={`inline-block text-[9px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap border ${
                               INTENSITY_CONFIG[demandConfig[d.dayNumber].intensity].badgeColor
                             }`}
                           >
@@ -266,7 +324,7 @@ export default function ScheduleReportModal({
                       )}
                     </th>
                   ))}
-                  <th className="py-3 px-4 text-center">Horas Totales</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">Horas Totales</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -277,9 +335,9 @@ export default function ScheduleReportModal({
 
                   return (
                     <tr key={w.id} className="hover:bg-amber-50/30 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-[#2B2523]">{w.name}</div>
-                        <div className="text-[11px] text-[#6E6259]">
+                      <td className="py-3 px-4 min-w-[190px]">
+                        <div className="font-bold text-[#2B2523] whitespace-nowrap">{w.name}</div>
+                        <div className="text-[11px] text-[#6E6259] whitespace-nowrap">
                           {w.role} · Contrato {w.contractHours}h
                         </div>
                       </td>
@@ -292,7 +350,7 @@ export default function ScheduleReportModal({
                           return (
                             <td
                               key={d.dayNumber}
-                              className="py-3 px-2 text-center bg-stone-50/70 text-stone-400 text-[11px]"
+                              className="py-3 px-2 text-center bg-stone-50/70 text-stone-400 text-[11px] whitespace-nowrap"
                             >
                               Cerrado
                             </td>
@@ -314,9 +372,9 @@ export default function ScheduleReportModal({
                         }
 
                         return (
-                          <td key={d.dayNumber} className="py-3 px-2 text-center">
+                          <td key={d.dayNumber} className="py-3 px-2 text-center whitespace-nowrap">
                             <span
-                              className={`inline-block px-2 py-1 rounded-md text-[11px] border ${badgeBg}`}
+                              className={`inline-block px-2.5 py-1 rounded-md text-[11px] whitespace-nowrap border ${badgeBg}`}
                             >
                               {label}
                             </span>
@@ -324,9 +382,9 @@ export default function ScheduleReportModal({
                         );
                       })}
 
-                      <td className="py-3 px-4 text-center font-bold">
+                      <td className="py-3 px-4 text-center font-bold whitespace-nowrap">
                         <span
-                          className={`inline-block px-2.5 py-1 rounded-lg text-xs ${
+                          className={`inline-block px-3 py-1 rounded-lg text-xs whitespace-nowrap font-bold ${
                             isOver
                               ? 'bg-rose-100 text-rose-800'
                               : isUnder
@@ -345,24 +403,24 @@ export default function ScheduleReportModal({
           </div>
 
           {/* Legend and Info */}
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 text-xs text-[#6E6259] pt-4 border-t border-stone-100">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-[#2B2523]">Leyenda:</span>
-              <span className="inline-flex items-center gap-1">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 text-xs text-[#6E6259] pt-4 border-t border-stone-200">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="font-semibold text-[#2B2523] whitespace-nowrap">Leyenda:</span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Mediodía (12:00 a 16:00)
               </span>
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Noche (20:00 a 00:00)
               </span>
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Doble Turno (8 horas)
               </span>
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2.5 h-2.5 rounded-full bg-stone-300" /> Libre
               </span>
             </div>
 
-            <div className="text-[11px] italic">
+            <div className="text-[11px] italic whitespace-nowrap">
               Generado por el Sistema de Gestión Taberna Quimera
             </div>
           </div>
@@ -371,16 +429,16 @@ export default function ScheduleReportModal({
         {/* Footer */}
         <div className="px-6 py-3 bg-[#FAF8F5] border-t border-stone-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="text-xs text-[#6E6259]">
-            💡 Puedes descargar la imagen en alta definición para compartirla por WhatsApp o imprimirla en papel.
+            💡 Puedes descargar el documento PDF oficial listo para imprimir o compartirlo por WhatsApp.
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleDownloadImage}
+              onClick={handleDownloadPdf}
               disabled={isDownloading}
               className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#852324] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50"
             >
-              <Download className="w-4 h-4" />
-              <span>{isDownloading ? 'Generando...' : 'Descargar como Imagen (PNG)'}</span>
+              <FileDown className="w-4 h-4" />
+              <span>{isDownloading ? 'Generando PDF...' : 'Descargar como PDF'}</span>
             </button>
             <button
               onClick={onClose}

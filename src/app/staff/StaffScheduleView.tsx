@@ -334,13 +334,13 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
             <span>{isAiLoading ? 'Optimizando con IA...' : 'Generar Cuadrante con IA'}</span>
           </button>
 
-          {/* Export / Report / Image */}
+          {/* Export / Report / PDF */}
           <button
             onClick={() => setIsReportModalOpen(true)}
             className="px-3.5 py-2.5 rounded-2xl border border-[#EADBC8] bg-white hover:bg-stone-50 text-[#2B2523] text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs"
           >
             <FileText className="w-4 h-4 text-[#9E2A2B]" />
-            <span>Exportar / Imagen / Imprimir</span>
+            <span>Exportar / PDF / Imprimir</span>
           </button>
 
           {/* Save Button */}
