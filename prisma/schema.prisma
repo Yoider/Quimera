@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -20,36 +20,75 @@ model Category {
 }
 
 model Product {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   name         String
   description  String
-  ingredients  String   // JSON encoded array of strings for universal SQLite/Postgres compatibility
+  ingredients  String            // JSON encoded array of ingredient strings or description
   price        Float
-  format       String   // e.g. "100grs", "Unidad", "Copa", "Caña", "Tapa"
+  format       String            // e.g. "100grs", "Unidad", "Copa", "Caña", "Tapa", "Mollete"
   categoryId   String
-  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category     Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   imageUrl     String
-  allergens    String   // JSON encoded array of allergen strings
-  rating       Float    @default(5.0)
-  totalReviews Int      @default(0)
-  isAvailable  Boolean  @default(true)
-  badge        String?  // e.g. "Especialidad de la casa", "Top Ventas"
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rating       Float             @default(5.0)
+  totalReviews Int               @default(0)
+  isAvailable  Boolean           @default(true)
+  badge        String?           // e.g. "Cruzcampo Glaciar", "100% Bellota", "Imprescindible"
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  allergens    ProductAllergen[]
+  orderItems   OrderItem[]
 
   @@index([categoryId])
   @@index([isAvailable])
 }
 
+model Allergen {
+  id         String            @id @default(cuid())
+  code       String            @unique // e.g. "GLUTEN", "LACTEOS", "PESCADO", "HUEVOS"
+  name       String            // e.g. "Gluten", "Lácteos", "Pescado", "Huevos"
+  icon       String?           // Lucide icon name or svg
+  badgeColor String?
+  products   ProductAllergen[]
+}
+
+model ProductAllergen {
+  id         String   @id @default(cuid())
+  productId  String
+  allergenId String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  allergen   Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, allergenId])
+  @@index([productId])
+  @@index([allergenId])
+}
+
+model StaffUser {
+  id        String   @id @default(cuid())
+  name      String
+  pinHash   String   // Hash or encrypted pin code (e.g. "1234")
+  role      String   @default("CAMARERO") // GERENTE, CAMARERO, COCINA
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+}
+
 model Order {
-  id         String      @id @default(cuid())
-  tableNumber String
-  status     String      @default("PENDING") // PENDING, PREPARING, SERVED, CANCELLED
-  notes      String?
-  totalAmount Float
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  items      OrderItem[]
+  id          String      @id @default(cuid())
+  orderNumber String      @unique // e.g. "Q-101"
+  tableNumber String      // e.g. "Mesa 4 (Terraza)", "Barra 2"
+  status      String      @default("PENDING") // PENDING, PREPARING, SERVED, PAID, CANCELLED
+  notes       String?
+  totalAmount Float       @default(0.0)
+  staffUserId String?
+  staffUser   StaffUser?  @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  items       OrderItem[]
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model OrderItem {
@@ -57,7 +96,11 @@ model OrderItem {
   orderId   String
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity  Int     @default(1)
   unitPrice Float
   notes     String?
+
+  @@index([orderId])
+  @@index([productId])
 }
