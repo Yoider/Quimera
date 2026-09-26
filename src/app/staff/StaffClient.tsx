@@ -4,9 +4,10 @@ import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Category, Product } from '@/types/menu';
 import { Worker } from '@/lib/schedule/types';
-import { updateProductAvailabilityAction, resetCatalogAction } from './actions';
+import { updateProductAvailabilityAction, resetCatalogAction, deleteProductAction } from './actions';
 import StaffWorkersView from './StaffWorkersView';
 import StaffScheduleView from './StaffScheduleView';
+import StaffProductModal from './StaffProductModal';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -22,6 +23,10 @@ import {
   Beer,
   Users,
   Calendar,
+  Edit2,
+  Plus,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface StaffClientProps {
@@ -92,9 +97,41 @@ export default function StaffClient({
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<string | null>(null);
 
+  // Product management modals state
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+
   const showNotification = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleProductSaved = (saved: Product) => {
+    setProducts((prev) => {
+      const exists = prev.some((p) => p.id === saved.id);
+      if (exists) {
+        return prev.map((p) => (p.id === saved.id ? saved : p));
+      } else {
+        return [saved, ...prev];
+      }
+    });
+    showNotification(`Plato "${saved.name}" guardado correctamente.`);
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    startTransition(async () => {
+      const target = products.find((p) => p.id === productId);
+      const res = await deleteProductAction(productId);
+      if (res.success) {
+        setProducts((prev) => prev.filter((p) => p.id !== productId));
+        setProductToDelete(null);
+        if (editingProduct?.id === productId) setEditingProduct(null);
+        showNotification(`Plato "${target?.name || ''}" eliminado de la carta.`);
+      } else {
+        alert('Error al eliminar el plato de la base de datos.');
+      }
+    });
   };
 
   const handleToggleAvailability = (productId: string, currentStatus: boolean) => {
@@ -269,15 +306,23 @@ export default function StaffClient({
                 />
               </div>
 
-              {/* Reset Action */}
-              <div className="flex items-center gap-3">
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setIsCreateProductModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#832223] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Añadir Plato</span>
+                </button>
+
                 <button
                   onClick={handleResetCatalog}
                   disabled={isPending}
-                  className="px-3.5 py-2 rounded-lg border border-[#EADBC8] text-xs font-semibold text-[#6E6259] hover:bg-stone-50 hover:text-[#2B2523] transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl border border-[#EADBC8] text-xs font-semibold text-[#6E6259] hover:bg-stone-50 hover:text-[#2B2523] transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Restablecer todo a disponible</span>
+                  <span>Restablecer todo</span>
                 </button>
               </div>
             </div>
@@ -309,7 +354,7 @@ export default function StaffClient({
               ))}
             </div>
 
-            {/* Product Toggle Grid */}
+            {/* Product Toggle & Edit Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredProducts.map((product) => {
                 const category = initialCategories.find((c) => c.id === product.categoryId);
@@ -317,46 +362,66 @@ export default function StaffClient({
                 return (
                   <div
                     key={product.id}
-                    className={`p-4 rounded-xl border transition-all bg-white flex flex-col justify-between gap-3 ${
+                    className={`p-4 rounded-2xl border transition-all bg-white flex flex-col justify-between gap-3 shadow-2xs ${
                       product.isAvailable
-                        ? 'border-[#EADBC8] hover:border-emerald-300'
+                        ? 'border-[#EADBC8] hover:border-[#D4A373]'
                         : 'border-red-200 bg-red-50/20'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E6259]">
-                            {category?.name || 'General'} · {product.format}
-                          </span>
-                          <h4 className="font-serif font-bold text-base text-[#2B2523]">
+                    <div className="space-y-2.5">
+                      <div className="flex items-start gap-3">
+                        {/* Thumbnail image with fallback */}
+                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-stone-100 border border-stone-200 shrink-0 relative shadow-2xs">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src =
+                                'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E6259] truncate block">
+                              {category?.name || 'General'} · <strong className="text-[#9E2A2B]">{product.format}</strong>
+                            </span>
+                            <span className="font-sans font-bold text-[#9E2A2B] text-sm shrink-0">
+                              {product.price.toFixed(2)}€
+                            </span>
+                          </div>
+
+                          <h4 className="font-serif font-bold text-base text-[#2B2523] leading-snug line-clamp-1">
                             {product.name}
                           </h4>
+
+                          {product.badge && (
+                            <span className="inline-block mt-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                              {product.badge}
+                            </span>
+                          )}
                         </div>
-                        <span className="font-sans font-bold text-[#9E2A2B] text-sm shrink-0">
-                          {product.price.toFixed(2)}€
-                        </span>
                       </div>
 
-                      <p className="text-xs text-[#6E6259] line-clamp-1 mt-1">
+                      <p className="text-xs text-[#6E6259] line-clamp-2">
                         {product.description}
                       </p>
                     </div>
 
-                    {/* Touch Friendly Big Toggle Button */}
-                    <div className="pt-2 border-t border-[#EADBC8]/70 flex items-center justify-between">
-                      <span className="text-xs text-[#6E6259]">
-                        Estado en carta:
-                      </span>
-
+                    {/* Touch Friendly Action Buttons */}
+                    <div className="pt-2 border-t border-[#EADBC8]/70 flex items-center justify-between gap-2">
                       <button
                         onClick={() => handleToggleAvailability(product.id, product.isAvailable)}
                         disabled={isPending}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer ${
                           product.isAvailable
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                            : 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                            : 'bg-red-600 hover:bg-red-700 text-white'
                         }`}
+                        title={product.isAvailable ? 'Marcar como agotado' : 'Marcar como disponible'}
                       >
                         {product.isAvailable ? (
                           <>
@@ -370,6 +435,24 @@ export default function StaffClient({
                           </>
                         )}
                       </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setEditingProduct(product)}
+                          className="p-1.5 rounded-lg border border-[#EADBC8] hover:border-[#9E2A2B] text-[#9E2A2B] hover:bg-[#9E2A2B]/10 text-xs font-semibold transition-colors cursor-pointer"
+                          title="Modificar foto, descripción, precio o formato"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => setProductToDelete(product)}
+                          className="p-1.5 rounded-lg border border-stone-200 hover:border-rose-400 text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs transition-colors cursor-pointer"
+                          title="Eliminar plato de la carta"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -507,6 +590,78 @@ export default function StaffClient({
           <StaffScheduleView workers={workers} />
         )}
       </main>
+
+      {/* Product Edit / Create Modal */}
+      {(editingProduct || isCreateProductModalOpen) && (
+        <StaffProductModal
+          isOpen={!!editingProduct || isCreateProductModalOpen}
+          mode={editingProduct ? 'edit' : 'create'}
+          product={editingProduct}
+          categories={initialCategories}
+          onClose={() => {
+            setEditingProduct(null);
+            setIsCreateProductModalOpen(false);
+          }}
+          onSave={handleProductSaved}
+          onRequestDelete={(prod) => {
+            setEditingProduct(null);
+            setProductToDelete(prod);
+          }}
+        />
+      )}
+
+      {/* Delete Product Confirmation Modal */}
+      {productToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => !isPending && setProductToDelete(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl border border-rose-200 shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-serif font-bold text-lg text-[#2B2523]">
+                  ¿Eliminar plato de la carta?
+                </h3>
+                <p className="text-xs text-[#6E6259] leading-relaxed">
+                  ¿Estás seguro de que deseas eliminar permanentemente{' '}
+                  <strong className="text-[#2B2523]">{productToDelete.name}</strong> ({productToDelete.format} · {productToDelete.price.toFixed(2)}€)?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-xl text-[11px] text-rose-800 space-y-1">
+              <p>⚠️ <strong>Atención:</strong> Esta acción no se puede deshacer.</p>
+              <p>El plato será eliminado de la base de datos y desaparecerá de la carta para los comensales.</p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setProductToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => handleDeleteProduct(productToDelete.id)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isPending ? 'Eliminando...' : 'Sí, eliminar plato'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
