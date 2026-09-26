@@ -10,8 +10,8 @@ import {
   INTENSITY_CONFIG,
 } from '@/lib/schedule/types';
 import { X, Copy, Check, Printer, FileText, Share2, FileDown } from 'lucide-react';
-import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ScheduleReportModalProps {
   isOpen: boolean;
@@ -137,82 +137,183 @@ export default function ScheduleReportModal({
     window.print();
   };
 
-  const handleDownloadPdf = async () => {
-    if (!reportRef.current) return;
+  const handleDownloadPdf = () => {
     setIsDownloading(true);
-    let clone: HTMLElement | null = null;
     try {
-      // Create an unconstrained off-screen clone with fixed presentation width
-      clone = reportRef.current.cloneNode(true) as HTMLElement;
-      clone.style.position = 'fixed';
-      clone.style.left = '-99999px';
-      clone.style.top = '0';
-      clone.style.width = '1200px';
-      clone.style.maxWidth = '1200px';
-      clone.style.height = 'auto';
-      clone.style.maxHeight = 'none';
-      clone.style.overflow = 'visible';
-      clone.style.backgroundColor = '#FAF8F5';
-      clone.style.padding = '36px 40px';
-      clone.style.zIndex = '-9999';
-
-      // Remove scrollbars from any inner containers in the clone
-      const scrollableElements = clone.querySelectorAll('.overflow-x-auto, .overflow-y-auto');
-      scrollableElements.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        htmlEl.style.overflow = 'visible';
-        htmlEl.style.maxWidth = 'none';
-        htmlEl.style.width = '100%';
-      });
-
-      // Ensure table inside clone takes 100% width
-      const table = clone.querySelector('table');
-      if (table) {
-        table.style.width = '100%';
-        table.style.minWidth = '100%';
-      }
-
-      document.body.appendChild(clone);
-
-      const dataUrl = await toPng(clone, {
-        quality: 0.98,
-        pixelRatio: 2, // High resolution for crystal clear text & badges
-        backgroundColor: '#FAF8F5',
-        cacheBust: true,
-      });
-
       // Create pristine A4 Landscape PDF (297 x 210 mm)
-      const pdf = new jsPDF({
+      const doc = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a4',
       });
 
-      const pageWidth = 297;
-      const pageHeight = 210;
-      const margin = 12;
-      const printWidth = pageWidth - margin * 2; // 273mm
+      // Brand Title Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(158, 42, 43); // #9E2A2B Quimera Wine
+      doc.text('TABERNA QUIMERA · SEVILLA', 14, 14);
 
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise((res) => {
-        img.onload = res;
+      doc.setFontSize(18);
+      doc.setTextColor(43, 37, 35); // #2B2523 Dark Charcoal
+      doc.text('Cuadrante Oficial de Turnos', 14, 22);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(110, 98, 89);
+      doc.text(`Válido del ${formatDate(monday)} al ${formatDate(sunday)}`, 14, 28);
+
+      // Optional Manager Notes Box
+      if (notes) {
+        doc.setFillColor(254, 243, 199); // #FEF3C7 Amber
+        doc.roundedRect(14, 31, 269, 7, 1.5, 1.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(146, 64, 14); // #92400E
+        doc.text(`Aviso de Gerencia: ${notes}`, 17, 35.5);
+      }
+
+      // Build Table Headers
+      const headers = [
+        'Trabajador / Rol',
+        ...DAYS_OF_WEEK.map((d, idx) => {
+          const shortDay = formatShortDay(monday, idx);
+          if (d.isClosed) return `${d.name} ${shortDay}\n(Cerrado)`;
+          const intensity = demandConfig?.[d.dayNumber]?.intensity;
+          const intensityLabel = intensity ? INTENSITY_CONFIG[intensity].label : '';
+          return `${d.name} ${shortDay}${intensityLabel ? `\n(${intensityLabel})` : ''}`;
+        }),
+        'Total Horas',
+      ];
+
+      // Build Table Body Rows
+      const rows = workers.map((w) => {
+        const total = getWorkerHours(w.id);
+        const workerCol = `${w.name}\n${w.role} (${w.contractHours}h)`;
+        const dayCols = DAYS_OF_WEEK.map((d) => {
+          if (d.isClosed) return 'Cerrado';
+          const shift = shiftMap.get(`${w.id}-${d.dayNumber}`) || 'OFF';
+          if (shift === 'LUNCH') return '12:00 - 16:00';
+          if (shift === 'DINNER') return '20:00 - 00:00';
+          if (shift === 'DOUBLE') return '12-16 / 20-00';
+          return 'Libre';
+        });
+        const hoursCol = `${total}h / ${w.contractHours}h`;
+        return [workerCol, ...dayCols, hoursCol];
       });
 
-      const imgHeight = (img.height * printWidth) / img.width;
-      const posY = imgHeight < pageHeight - margin * 2 ? (pageHeight - imgHeight) / 2 : margin;
+      // Render Table with autoTable
+      autoTable(doc, {
+        startY: notes ? 41 : 33,
+        head: [headers],
+        body: rows,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [158, 42, 43], // #9E2A2B
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+          fontSize: 8.5,
+          cellPadding: 3,
+        },
+        columnStyles: {
+          0: { cellWidth: 46, halign: 'left', fontStyle: 'bold' },
+          8: { cellWidth: 26, halign: 'center', fontStyle: 'bold' },
+        },
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          lineColor: [229, 231, 235],
+          lineWidth: 0.2,
+          valign: 'middle',
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const colIdx = data.column.index;
+            if (colIdx >= 1 && colIdx <= 7) {
+              data.cell.styles.halign = 'center';
+              const val = String(data.cell.raw);
+              if (val === 'Cerrado') {
+                data.cell.styles.fillColor = [243, 244, 246];
+                data.cell.styles.textColor = [156, 163, 175];
+              } else if (val.includes('12:00')) {
+                data.cell.styles.fillColor = [254, 243, 199];
+                data.cell.styles.textColor = [146, 64, 14];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (val.includes('20:00')) {
+                data.cell.styles.fillColor = [224, 231, 255];
+                data.cell.styles.textColor = [49, 46, 129];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (val.includes('12-16')) {
+                data.cell.styles.fillColor = [237, 233, 254];
+                data.cell.styles.textColor = [91, 33, 182];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (val === 'Libre') {
+                data.cell.styles.fillColor = [250, 250, 250];
+                data.cell.styles.textColor = [156, 163, 175];
+              }
+            } else if (colIdx === 8) {
+              data.cell.styles.halign = 'center';
+              const val = String(data.cell.raw);
+              const parts = val.replace(/h/g, '').split('/');
+              const curH = Number(parts[0]?.trim());
+              const maxH = Number(parts[1]?.trim());
+              if (!isNaN(curH) && !isNaN(maxH)) {
+                if (curH > maxH) {
+                  data.cell.styles.fillColor = [255, 228, 230];
+                  data.cell.styles.textColor = [159, 18, 57];
+                } else if (curH < maxH) {
+                  data.cell.styles.fillColor = [254, 243, 199];
+                  data.cell.styles.textColor = [146, 64, 14];
+                } else {
+                  data.cell.styles.fillColor = [209, 250, 229];
+                  data.cell.styles.textColor = [6, 95, 70];
+                }
+              }
+            }
+          }
+        },
+      });
 
-      pdf.addImage(dataUrl, 'PNG', margin, posY, printWidth, Math.min(imgHeight, pageHeight - margin * 2));
+      const finalY = (doc as any).lastAutoTable?.finalY || 140;
+
+      // Legend Section
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(43, 37, 35);
+      doc.text('Leyenda de Turnos:', 14, finalY + 9);
+
+      doc.setFont('helvetica', 'normal');
+      // Mediodía (Amber dot)
+      doc.setFillColor(251, 191, 36);
+      doc.circle(52, finalY + 8, 2, 'F');
+      doc.text('Mediodía (12:00 a 16:00)', 56, finalY + 9);
+
+      // Noche (Indigo dot)
+      doc.setFillColor(99, 102, 241);
+      doc.circle(108, finalY + 8, 2, 'F');
+      doc.text('Noche (20:00 a 00:00)', 112, finalY + 9);
+
+      // Doble (Purple dot)
+      doc.setFillColor(168, 85, 247);
+      doc.circle(160, finalY + 8, 2, 'F');
+      doc.text('Doble Turno (8 horas)', 164, finalY + 9);
+
+      // Libre (Stone dot)
+      doc.setFillColor(209, 213, 219);
+      doc.circle(210, finalY + 8, 2, 'F');
+      doc.text('Libre', 214, finalY + 9);
+
+      // Footer note
+      doc.setFontSize(7.5);
+      doc.setTextColor(156, 163, 175);
+      doc.text('Documento oficial generado por Taberna Quimera · Sevilla', 14, finalY + 16);
 
       const startStr = monday.toISOString().split('T')[0];
-      pdf.save(`cuadrante-quimera-${startStr}.pdf`);
+      doc.save(`cuadrante-quimera-${startStr}.pdf`);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Error al generar el documento PDF del cuadrante.');
     } finally {
-      if (clone && document.body.contains(clone)) {
-        document.body.removeChild(clone);
-      }
       setIsDownloading(false);
     }
   };
