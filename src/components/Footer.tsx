@@ -45,21 +45,45 @@ export default function Footer() {
           <div className="space-y-3">
             <h4 className="font-serif text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#D4A373]" />
-              Horario de Apertura
+              Tabla de Horarios
             </h4>
-            <ul className="text-xs space-y-2 text-stone-400">
-              <li className="flex justify-between pb-1 border-b border-stone-800">
-                <span>Lunes a Domingo:</span>
-                <strong className="text-white">12:30h – 00:00h</strong>
-              </li>
-              <li className="flex justify-between pb-1 border-b border-stone-800">
-                <span>Cocina ininterrumpida:</span>
-                <strong className="text-amber-200">13:00h – 23:30h</strong>
-              </li>
-              <li className="pt-1 text-[11px] text-stone-400">
-                * Servicio de barra y terraza sin reserva previa.
-              </li>
-            </ul>
+            <div className="overflow-hidden rounded-lg border border-stone-800 bg-stone-900/60 text-xs">
+              <table className="w-full text-left">
+                <tbody className="divide-y divide-stone-800 text-[11px]">
+                  <tr className="bg-red-950/40 text-rose-300 font-semibold">
+                    <td className="py-1.5 px-2.5">Lunes</td>
+                    <td className="py-1.5 px-2.5 text-right font-bold text-rose-400">CERRADO</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Martes</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Miércoles</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Jueves</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Viernes</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Sábado</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                  <tr className="hover:bg-stone-800/50">
+                    <td className="py-1.5 px-2.5 text-stone-300">Domingo</td>
+                    <td className="py-1.5 px-2.5 text-right text-stone-400">12:00-16:00 · 20:00-00:00</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-stone-400">
+              * Servicio en barra y mesas sin reserva previa.
+            </p>
           </div>
 
           {/* Ubicación y Enlaces */}

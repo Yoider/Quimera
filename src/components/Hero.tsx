@@ -105,12 +105,12 @@ export default function Hero() {
               </div>
 
               {/* Card Footer Bar */}
-              <div className="p-4 bg-white flex items-center justify-between text-xs text-[#6E6259]">
+              <div className="p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between text-xs text-[#6E6259] gap-1.5">
                 <div>
-                  <span className="font-semibold text-[#2B2523]">Horario de apertura:</span>{' '}
-                  12:30 a 00:00 h
+                  <span className="font-semibold text-[#2B2523]">Horario:</span>{' '}
+                  Mar a Dom 12:00-16:00 · 20:00-00:00 <span className="text-red-700 font-semibold">(Lunes cerrado)</span>
                 </div>
-                <div className="text-[#9E2A2B] font-semibold">Tapas & Raciones</div>
+                <div className="text-[#9E2A2B] font-semibold shrink-0">Tapas & Raciones</div>
               </div>
             </div>
           </div>

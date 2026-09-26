@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import InstagramIcon from './icons/InstagramIcon';
+import ScheduleModal from './ScheduleModal';
 import { Category } from '@/types/menu';
 
 interface HeaderProps {
@@ -48,6 +49,7 @@ export default function Header({
 }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -79,10 +81,15 @@ export default function Header({
               <MapPin className="w-3.5 h-3.5 text-[#D4A373]" />
               Sevilla, España
             </span>
-            <span className="hidden sm:flex items-center gap-1.5">
+            <button
+              onClick={() => setScheduleModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 hover:text-white cursor-pointer transition-colors text-left"
+              title="Ver tabla completa de horarios"
+            >
               <Clock className="w-3.5 h-3.5 text-[#D4A373]" />
-              Abierto todos los días: 12:30h - 00:00h
-            </span>
+              <span>Mar-Dom: 12:00-16:00 · 20:00-00:00 (Lunes cerrado)</span>
+              <span className="text-[10px] text-amber-300 underline underline-offset-2 ml-1 font-semibold">Ver tabla</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
@@ -130,11 +137,17 @@ export default function Header({
           >
             Carta Completa
           </a>
+          <button
+            onClick={() => setScheduleModalOpen(true)}
+            className="hover:text-[#9E2A2B] transition-colors py-1 border-b-2 border-transparent hover:border-[#9E2A2B] cursor-pointer"
+          >
+            Horario
+          </button>
           <a
             href="#informacion"
             className="hover:text-[#9E2A2B] transition-colors py-1 border-b-2 border-transparent hover:border-[#9E2A2B]"
           >
-            Horario & Ubicación
+            Localización
           </a>
           <Link
             href="/staff"
@@ -165,12 +178,21 @@ export default function Header({
           >
             Carta Completa
           </a>
+          <button
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setScheduleModalOpen(true);
+            }}
+            className="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-[#2B2523] hover:bg-[#EADBC8]/40 cursor-pointer"
+          >
+            Horario Semanal (Lunes cerrado)
+          </button>
           <a
             href="#informacion"
             onClick={() => setMobileMenuOpen(false)}
             className="block px-3 py-2 rounded-md text-base font-medium text-[#2B2523] hover:bg-[#EADBC8]/40"
           >
-            Horarios & Localización
+            Localización
           </a>
           <Link
             href="/staff"
@@ -212,6 +234,12 @@ export default function Header({
           </div>
         </div>
       </div>
+
+      {/* Schedule Modal */}
+      <ScheduleModal
+        isOpen={scheduleModalOpen}
+        onClose={() => setScheduleModalOpen(false)}
+      />
     </header>
   );
 }
