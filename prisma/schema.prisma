@@ -7,6 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  username      String?   @unique
+  email         String?   @unique
+  emailVerified DateTime? // Preparado para Google OAuth
+  passwordHash  String?   // Hash bcrypt (nulo si se registra solo con Google)
+  image         String?   // Foto de perfil o avatar de Google
+  role          String    @default("CLIENTE") // CLIENTE, CAMARERO, COCINA, GERENTE, ADMIN
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  orders        Order[]
+
+  @@index([username])
+  @@index([email])
+}
+
 model Category {
   id          String    @id @default(cuid())
   slug        String    @unique
@@ -83,12 +100,15 @@ model Order {
   totalAmount Float       @default(0.0)
   staffUserId String?
   staffUser   StaffUser?  @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   items       OrderItem[]
 
   @@index([status])
   @@index([createdAt])
+  @@index([userId])
 }
 
 model OrderItem {

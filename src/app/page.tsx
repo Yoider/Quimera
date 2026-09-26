@@ -4,17 +4,19 @@ import MenuCatalog from '@/components/MenuCatalog';
 import ScheduleTable from '@/components/ScheduleTable';
 import Footer from '@/components/Footer';
 import { getCategories, getProducts } from '@/lib/menuService';
+import { getSession } from '@/lib/auth/session';
 
-export const revalidate = 60; // Revalidate every 60 seconds
+export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const categories = await getCategories();
   const products = await getProducts();
+  const currentUser = await getSession();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF8F5]">
-      {/* Sticky Header with Brand and Category sub-nav */}
-      <Header categories={categories} />
+      {/* Sticky Header with Brand, Category sub-nav, and User Session state */}
+      <Header categories={categories} currentUser={currentUser} />
 
       {/* Hero Welcome & Atmosphere */}
       <Hero />
