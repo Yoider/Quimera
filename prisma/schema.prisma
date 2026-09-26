@@ -8,20 +8,29 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String            @id @default(cuid())
   name          String?
-  username      String?   @unique
-  email         String?   @unique
-  emailVerified DateTime? // Preparado para Google OAuth
-  passwordHash  String?   // Hash bcrypt (nulo si se registra solo con Google)
-  image         String?   // Foto de perfil o avatar de Google
-  role          String    @default("CLIENTE") // CLIENTE, CAMARERO, COCINA, GERENTE, ADMIN
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  username      String?           @unique
+  email         String?           @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  role          String            @default("CLIENTE") // CLIENTE, CAMARERO, COCINA, GERENTE, ADMIN
+
+  // Campos para gestión de plantilla y cuadrantes
+  contractHours Int               @default(40) // Horas contratadas por semana (40, 30, 20, 15)
+  preference    String            @default("FULL") // FULL, WEEKEND_ONLY, WEEKDAY_ONLY, MORNING_ONLY, NIGHT_ONLY
+  colorTag      String?           // Color distintivo para el cuadrante (#9E2A2B, #2563EB, etc.)
+  isActive      Boolean           @default(true)
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
   orders        Order[]
+  shifts        ShiftAssignment[]
 
   @@index([username])
   @@index([email])
+  @@index([role])
 }
 
 model Category {
@@ -123,4 +132,32 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+}
+
+model WeeklySchedule {
+  id            String            @id @default(cuid())
+  weekStartDate DateTime          // Fecha del lunes de la semana correspondiente (00:00:00)
+  notes         String?
+  isPublished   Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  shifts        ShiftAssignment[]
+
+  @@unique([weekStartDate])
+  @@index([weekStartDate])
+}
+
+model ShiftAssignment {
+  id         String         @id @default(cuid())
+  scheduleId String
+  schedule   WeeklySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int            // 1=Lunes (Cerrado), 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado, 7=Domingo
+  shiftType  String         // LUNCH (12-16), DINNER (20-00), DOUBLE (12-16 y 20-00), OFF (Libre)
+  hours      Float          @default(4.0)
+
+  @@unique([scheduleId, userId, dayOfWeek])
+  @@index([scheduleId])
+  @@index([userId])
 }

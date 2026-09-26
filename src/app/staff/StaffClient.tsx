@@ -3,7 +3,10 @@
 import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Category, Product } from '@/types/menu';
+import { Worker } from '@/lib/schedule/types';
 import { updateProductAvailabilityAction, resetCatalogAction } from './actions';
+import StaffWorkersView from './StaffWorkersView';
+import StaffScheduleView from './StaffScheduleView';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -17,11 +20,14 @@ import {
   Sparkles,
   ChefHat,
   Beer,
+  Users,
+  Calendar,
 } from 'lucide-react';
 
 interface StaffClientProps {
   initialCategories: Category[];
   initialProducts: Product[];
+  initialWorkers: Worker[];
 }
 
 interface MockOrder {
@@ -75,11 +81,13 @@ const INITIAL_MOCK_ORDERS: MockOrder[] = [
 export default function StaffClient({
   initialCategories,
   initialProducts,
+  initialWorkers,
 }: StaffClientProps) {
   const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [workers, setWorkers] = useState<Worker[]>(initialWorkers);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'inventory' | 'orders'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'workers' | 'schedule'>('inventory');
   const [orders, setOrders] = useState<MockOrder[]>(INITIAL_MOCK_ORDERS);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<string | null>(null);
@@ -179,10 +187,10 @@ export default function StaffClient({
         </div>
 
         {/* Tab Selector */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-6 text-sm font-medium border-t border-stone-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-6 text-sm font-medium border-t border-stone-800 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`py-3 flex items-center gap-2 border-b-2 transition-colors ${
+            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
               activeTab === 'inventory'
                 ? 'border-[#D4A373] text-[#D4A373]'
                 : 'border-transparent text-stone-400 hover:text-white'
@@ -194,7 +202,7 @@ export default function StaffClient({
 
           <button
             onClick={() => setActiveTab('orders')}
-            className={`py-3 flex items-center gap-2 border-b-2 transition-colors ${
+            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
               activeTab === 'orders'
                 ? 'border-[#D4A373] text-[#D4A373]'
                 : 'border-transparent text-stone-400 hover:text-white'
@@ -202,6 +210,35 @@ export default function StaffClient({
           >
             <ClipboardList className="w-4 h-4" />
             <span>Comandas en Curso ({orders.filter((o) => o.status !== 'SERVED').length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('workers')}
+            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
+              activeTab === 'workers'
+                ? 'border-[#D4A373] text-[#D4A373]'
+                : 'border-transparent text-stone-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Gestión de Plantilla ({workers.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('schedule')}
+            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
+              activeTab === 'schedule'
+                ? 'border-[#D4A373] text-[#D4A373]'
+                : 'border-transparent text-stone-400 hover:text-white'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span className="flex items-center gap-1.5">
+              Cuadrante de Horarios
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-gradient-to-r from-amber-500 to-[#9E2A2B] text-white font-bold tracking-wider uppercase">
+                IA
+              </span>
+            </span>
           </button>
         </div>
       </header>
@@ -216,7 +253,7 @@ export default function StaffClient({
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'inventory' ? (
+        {activeTab === 'inventory' && (
           <div className="space-y-6">
             {/* Filter and Actions Bar */}
             <div className="bg-white p-4 rounded-xl border border-[#EADBC8] shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
@@ -339,7 +376,9 @@ export default function StaffClient({
               })}
             </div>
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'orders' && (
           /* Orders Board */
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -453,6 +492,19 @@ export default function StaffClient({
               })}
             </div>
           </div>
+        )}
+
+        {/* Workers Roster View */}
+        {activeTab === 'workers' && (
+          <StaffWorkersView
+            initialWorkers={workers}
+            onWorkersChange={setWorkers}
+          />
+        )}
+
+        {/* Weekly Schedule View */}
+        {activeTab === 'schedule' && (
+          <StaffScheduleView workers={workers} />
         )}
       </main>
     </div>
