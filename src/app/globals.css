@@ -59,3 +59,9 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Prevent SVGs from being click event targets, avoiding SVGAnimatedString errors in browser extensions */
+svg, svg * {
+  pointer-events: none;
+}
+

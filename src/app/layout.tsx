@@ -40,6 +40,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className={`${playfair.variable} ${inter.variable} scroll-smooth`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined' && typeof SVGAnimatedString !== 'undefined') {
+                var p = SVGAnimatedString.prototype;
+                if (!p.slice) p.slice = function() { var s = this.baseVal || ''; return String.prototype.slice.apply(s, arguments); };
+                if (!p.split) p.split = function() { var s = this.baseVal || ''; return String.prototype.split.apply(s, arguments); };
+                if (!p.indexOf) p.indexOf = function() { var s = this.baseVal || ''; return String.prototype.indexOf.apply(s, arguments); };
+                if (!p.includes) p.includes = function() { var s = this.baseVal || ''; return String.prototype.includes.apply(s, arguments); };
+              }
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#2B2523] selection:bg-[#D4A373]/30 selection:text-[#9E2A2B]">
         {children}
       </body>
