@@ -15,12 +15,25 @@ import { hashPassword } from '@/lib/auth/password';
 import { revalidatePath } from 'next/cache';
 
 /**
- * Normalizes a date to Monday of that week at 00:00:00 UTC
+ * Normalizes a date or date string to Monday at 00:00:00 UTC
  */
-function getMondayOfWeek(d: Date): Date {
-  const date = new Date(d);
-  const day = date.getDay(); // 0 is Sunday, 1 is Monday...
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+function getMondayOfWeek(input: string | Date): Date {
+  if (typeof input === 'string') {
+    const match = input.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+      const d = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+      const dayOfWeek = d.getUTCDay(); // 0 is Sunday, 1 is Monday...
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      return new Date(Date.UTC(year, month, day + diff, 0, 0, 0, 0));
+    }
+  }
+
+  const date = new Date(input);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
   const monday = new Date(date.setDate(diff));
   monday.setHours(0, 0, 0, 0);
   return monday;
@@ -181,7 +194,7 @@ export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{
   demandConfig: WeekDemandConfig;
 }> {
   try {
-    const monday = getMondayOfWeek(new Date(weekDateStr));
+    const monday = getMondayOfWeek(weekDateStr);
 
     const schedule = await prisma.weeklySchedule.findUnique({
       where: { weekStartDate: monday },
@@ -238,48 +251,66 @@ export async function saveWeeklyScheduleAction(
   notes?: string,
   demandConfig?: WeekDemandConfig
 ): Promise<{ success: boolean; scheduleId?: string; error?: string }> {
-  try {
-    const monday = getMondayOfWeek(new Date(weekDateStr));
-    const demandConfigStr = demandConfig ? JSON.stringify(demandConfig) : undefined;
+  const monday = getMondayOfWeek(weekDateStr);
+  const demandConfigStr = demandConfig ? JSON.stringify(demandConfig) : undefined;
 
-    const schedule = await prisma.weeklySchedule.upsert({
-      where: { weekStartDate: monday },
-      update: {
-        notes: notes || null,
-        demandConfig: demandConfigStr,
-        isPublished: true,
-      },
-      create: {
-        weekStartDate: monday,
-        notes: notes || null,
-        demandConfig: demandConfigStr,
-        isPublished: true,
-      },
-    });
+  // Retry up to 2 attempts on connection pool timeout
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const schedule = await prisma.$transaction(
+        async (tx) => {
+          const sched = await tx.weeklySchedule.upsert({
+            where: { weekStartDate: monday },
+            update: {
+              notes: notes || null,
+              demandConfig: demandConfigStr,
+              isPublished: true,
+            },
+            create: {
+              weekStartDate: monday,
+              notes: notes || null,
+              demandConfig: demandConfigStr,
+              isPublished: true,
+            },
+          });
 
-    // Replace shift assignments for this schedule
-    await prisma.shiftAssignment.deleteMany({
-      where: { scheduleId: schedule.id },
-    });
+          await tx.shiftAssignment.deleteMany({
+            where: { scheduleId: sched.id },
+          });
 
-    if (shifts.length > 0) {
-      await prisma.shiftAssignment.createMany({
-        data: shifts.map((s) => ({
-          scheduleId: schedule.id,
-          userId: s.userId,
-          dayOfWeek: s.dayOfWeek,
-          shiftType: s.shiftType,
-          hours: s.hours,
-        })),
-      });
+          if (shifts.length > 0) {
+            await tx.shiftAssignment.createMany({
+              data: shifts.map((s) => ({
+                scheduleId: sched.id,
+                userId: s.userId,
+                dayOfWeek: s.dayOfWeek,
+                shiftType: s.shiftType,
+                hours: s.hours,
+              })),
+            });
+          }
+
+          return sched;
+        },
+        { timeout: 25000 }
+      );
+
+      revalidatePath('/staff');
+      return { success: true, scheduleId: schedule.id };
+    } catch (err: unknown) {
+      console.error(`Attempt ${attempt} saving weekly schedule failed:`, err);
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        continue;
+      }
+      return {
+        success: false,
+        error: 'Error de conexión con PostgreSQL. Reintentando...',
+      };
     }
-
-    revalidatePath('/staff');
-    return { success: true, scheduleId: schedule.id };
-  } catch (err) {
-    console.error('Error saving weekly schedule:', err);
-    return { success: false, error: 'Error al guardar el cuadrante en PostgreSQL.' };
   }
+
+  return { success: false, error: 'Error al guardar el cuadrante en PostgreSQL.' };
 }
 
 /**

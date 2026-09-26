@@ -59,6 +59,13 @@ function getMonday(d: Date): Date {
   return monday;
 }
 
+function formatDateKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [shifts, setShifts] = useState<{ userId: string; dayOfWeek: number; shiftType: ShiftType; hours: number }[]>([]);
@@ -82,7 +89,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   // Load schedule for the current Monday
   const loadScheduleForWeek = (monday: Date) => {
     startTransition(async () => {
-      const data = await getWeeklyScheduleAction(monday.toISOString());
+      const data = await getWeeklyScheduleAction(formatDateKey(monday));
       setShifts(data.shifts || []);
       setNotes(data.notes || '');
       setDemandConfig(data.demandConfig || DEFAULT_WEEK_DEMAND);
@@ -197,7 +204,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   const handleSaveSchedule = () => {
     startTransition(async () => {
       const res = await saveWeeklyScheduleAction(
-        currentMonday.toISOString(),
+        formatDateKey(currentMonday),
         shifts,
         notes,
         demandConfig
@@ -215,7 +222,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   const handleGenerateAI = async () => {
     setIsAiLoading(true);
     try {
-      const result = await generateAIScheduleAction(currentMonday.toISOString(), demandConfig);
+      const result = await generateAIScheduleAction(formatDateKey(currentMonday), demandConfig);
       if (result.success) {
         setShifts(result.assignments);
         setAiExplanation(result.explanation);
