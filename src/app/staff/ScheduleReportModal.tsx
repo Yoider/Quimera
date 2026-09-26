@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Worker, ShiftType, DAYS_OF_WEEK, SHIFT_LABELS } from '@/lib/schedule/types';
+import {
+  Worker,
+  ShiftType,
+  DAYS_OF_WEEK,
+  SHIFT_LABELS,
+  WeekDemandConfig,
+  INTENSITY_CONFIG,
+} from '@/lib/schedule/types';
 import { X, Copy, Check, Printer, FileText, Share2 } from 'lucide-react';
 
 interface ScheduleReportModalProps {
@@ -11,6 +18,7 @@ interface ScheduleReportModalProps {
   weekStartDate: Date;
   shifts: { userId: string; dayOfWeek: number; shiftType: ShiftType; hours: number }[];
   notes?: string;
+  demandConfig?: WeekDemandConfig;
 }
 
 export default function ScheduleReportModal({
@@ -20,6 +28,7 @@ export default function ScheduleReportModal({
   weekStartDate,
   shifts,
   notes,
+  demandConfig,
 }: ScheduleReportModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -57,6 +66,21 @@ export default function ScheduleReportModal({
     let text = `🍷 *TABERNA QUIMERA — HORARIO SEMANAL*\n`;
     text += `📅 *Semana:* ${formatDate(monday)} al ${formatDate(sunday)}\n`;
     text += `🚪 *Lunes:* CERRADO (Descanso del personal)\n`;
+    if (demandConfig) {
+      const buyaDays = DAYS_OF_WEEK.filter(
+        (d) => !d.isClosed && demandConfig[d.dayNumber]?.intensity === 'DIFICIL'
+      ).map((d) => d.name);
+      const flojoDays = DAYS_OF_WEEK.filter(
+        (d) => !d.isClosed && demandConfig[d.dayNumber]?.intensity === 'FACIL'
+      ).map((d) => d.name);
+
+      if (buyaDays.length > 0) {
+        text += `🔥 *Días de Buya (Refuerzo):* ${buyaDays.join(', ')}\n`;
+      }
+      if (flojoDays.length > 0) {
+        text += `🌿 *Días Flojos (Servicio ágil):* ${flojoDays.join(', ')}\n`;
+      }
+    }
     if (notes) {
       text += `📝 *Aviso:* ${notes}\n`;
     }
@@ -190,6 +214,17 @@ export default function ScheduleReportModal({
                       <div className="text-[10px] font-sans font-normal text-[#6E6259]">
                         {formatShortDay(monday, idx)}
                       </div>
+                      {!d.isClosed && demandConfig && demandConfig[d.dayNumber] && (
+                        <div className="mt-1">
+                          <span
+                            className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${
+                              INTENSITY_CONFIG[demandConfig[d.dayNumber].intensity].badgeColor
+                            }`}
+                          >
+                            {INTENSITY_CONFIG[demandConfig[d.dayNumber].intensity].label}
+                          </span>
+                        </div>
+                      )}
                     </th>
                   ))}
                   <th className="py-3 px-4 text-center">Horas Totales</th>

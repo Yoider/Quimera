@@ -3,6 +3,9 @@ import {
   ShiftType,
   AIScheduleResult,
   SHIFT_HOURS,
+  WeekDemandConfig,
+  DEFAULT_WEEK_DEMAND,
+  DAYS_OF_WEEK,
 } from './types';
 
 interface ShiftRequirement {
@@ -12,28 +15,6 @@ interface ShiftRequirement {
   minCamarero: number;
   label: string;
 }
-
-// Operational requirements for Taberna Quimera
-const SHIFT_REQUIREMENTS: ShiftRequirement[] = [
-  // Martes (2)
-  { dayOfWeek: 2, shiftPeriod: 'LUNCH', minCocina: 1, minCamarero: 1, label: 'Martes Mediodía' },
-  { dayOfWeek: 2, shiftPeriod: 'DINNER', minCocina: 1, minCamarero: 1, label: 'Martes Noche' },
-  // Miércoles (3)
-  { dayOfWeek: 3, shiftPeriod: 'LUNCH', minCocina: 1, minCamarero: 1, label: 'Miércoles Mediodía' },
-  { dayOfWeek: 3, shiftPeriod: 'DINNER', minCocina: 1, minCamarero: 1, label: 'Miércoles Noche' },
-  // Jueves (4)
-  { dayOfWeek: 4, shiftPeriod: 'LUNCH', minCocina: 1, minCamarero: 1, label: 'Jueves Mediodía' },
-  { dayOfWeek: 4, shiftPeriod: 'DINNER', minCocina: 1, minCamarero: 1, label: 'Jueves Noche' },
-  // Viernes (5) - Noche alta afluencia
-  { dayOfWeek: 5, shiftPeriod: 'LUNCH', minCocina: 1, minCamarero: 1, label: 'Viernes Mediodía' },
-  { dayOfWeek: 5, shiftPeriod: 'DINNER', minCocina: 2, minCamarero: 2, label: 'Viernes Noche (Refuerzo)' },
-  // Sábado (6) - Máxima afluencia mediodía y noche
-  { dayOfWeek: 6, shiftPeriod: 'LUNCH', minCocina: 2, minCamarero: 2, label: 'Sábado Mediodía (Punta)' },
-  { dayOfWeek: 6, shiftPeriod: 'DINNER', minCocina: 2, minCamarero: 2, label: 'Sábado Noche (Punta)' },
-  // Domingo (7) - Alta mediodía, noche estándar
-  { dayOfWeek: 7, shiftPeriod: 'LUNCH', minCocina: 2, minCamarero: 2, label: 'Domingo Mediodía (Punta)' },
-  { dayOfWeek: 7, shiftPeriod: 'DINNER', minCocina: 1, minCamarero: 1, label: 'Domingo Noche' },
-];
 
 /**
  * Checks if a worker is allowed to work on a specific day & period based on their preferences
@@ -72,7 +53,10 @@ function isWorkerEligibleForShift(
  * AI Auto-Scheduler for Taberna Quimera
  * Balances contract hours, employee preferences, and restaurant staffing requirements.
  */
-export function generateAISchedule(workers: Worker[]): AIScheduleResult {
+export function generateAISchedule(
+  workers: Worker[],
+  demandConfig: WeekDemandConfig = DEFAULT_WEEK_DEMAND
+): AIScheduleResult {
   const activeWorkers = workers.filter((w) => w.isActive);
 
   // Map of worker assignments: userId -> (dayOfWeek -> { lunch: boolean, dinner: boolean })
@@ -98,6 +82,50 @@ export function generateAISchedule(workers: Worker[]): AIScheduleResult {
     '✓ Lunes bloqueado como CERRADO para descanso de toda la plantilla.',
   ];
 
+  // Build dynamic shift requirements from daily demand config (Fácil / Intermedio / Difícil-Buya)
+  const shiftRequirements: ShiftRequirement[] = [];
+  const buyaDays: string[] = [];
+  const flojoDays: string[] = [];
+
+  for (let day = 2; day <= 7; day++) {
+    const cfg = demandConfig[day] || DEFAULT_WEEK_DEMAND[day];
+    const dayObj = DAYS_OF_WEEK.find((d) => d.dayNumber === day);
+    const dayName = dayObj?.name || `Día ${day}`;
+
+    if (cfg.intensity === 'DIFICIL') {
+      buyaDays.push(dayName);
+    } else if (cfg.intensity === 'FACIL') {
+      flojoDays.push(dayName);
+    }
+
+    shiftRequirements.push({
+      dayOfWeek: day,
+      shiftPeriod: 'LUNCH',
+      minCocina: cfg.minCocinaLunch,
+      minCamarero: cfg.minCamareroLunch,
+      label: `${dayName} Mediodía (${cfg.intensity})`,
+    });
+
+    shiftRequirements.push({
+      dayOfWeek: day,
+      shiftPeriod: 'DINNER',
+      minCocina: cfg.minCocinaDinner,
+      minCamarero: cfg.minCamareroDinner,
+      label: `${dayName} Noche (${cfg.intensity})`,
+    });
+  }
+
+  if (buyaDays.length > 0) {
+    explanation.push(
+      `🔥 Días de BUYA (${buyaDays.join(', ')}): refuerzo prioritario aplicado en cocina y sala.`
+    );
+  }
+  if (flojoDays.length > 0) {
+    explanation.push(
+      `🌿 Días FLOJOS (${flojoDays.join(', ')}): dotación ágil para contención de horas de plantilla.`
+    );
+  }
+
   // Separate workers by role
   const cocinaWorkers = activeWorkers.filter((w) => w.role === 'COCINA');
   const salaWorkers = activeWorkers.filter(
@@ -121,7 +149,7 @@ export function generateAISchedule(workers: Worker[]): AIScheduleResult {
   let totalCoveredShifts = 0;
 
   // Process each operational requirement slot
-  for (const req of SHIFT_REQUIREMENTS) {
+  for (const req of shiftRequirements) {
     const { dayOfWeek, shiftPeriod, minCocina, minCamarero } = req;
 
     // --- A. Assign Cocina ---

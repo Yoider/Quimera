@@ -6,8 +6,12 @@ import {
   ShiftType,
   DAYS_OF_WEEK,
   SHIFT_HOURS,
-  SHIFT_LABELS,
   PREFERENCE_LABELS,
+  DayIntensity,
+  DayDemand,
+  WeekDemandConfig,
+  INTENSITY_CONFIG,
+  DEFAULT_WEEK_DEMAND,
 } from '@/lib/schedule/types';
 import {
   getWeeklyScheduleAction,
@@ -23,8 +27,6 @@ import {
   Save,
   FileText,
   Clock,
-  AlertCircle,
-  CheckCircle2,
   RotateCcw,
   Info,
   Sun,
@@ -33,7 +35,12 @@ import {
   Shield,
   ChefHat,
   Utensils,
+  SlidersHorizontal,
   ChevronDown,
+  ChevronUp,
+  Plus,
+  Minus,
+  Users,
 } from 'lucide-react';
 
 interface StaffScheduleViewProps {
@@ -56,6 +63,8 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [shifts, setShifts] = useState<{ userId: string; dayOfWeek: number; shiftType: ShiftType; hours: number }[]>([]);
   const [notes, setNotes] = useState<string>('');
+  const [demandConfig, setDemandConfig] = useState<WeekDemandConfig>(DEFAULT_WEEK_DEMAND);
+  const [isDemandDrawerOpen, setIsDemandDrawerOpen] = useState(true);
   const [activeCellMenu, setActiveCellMenu] = useState<{ workerId: string; dayNumber: number } | null>(null);
 
   const [isPending, startTransition] = useTransition();
@@ -76,6 +85,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
       const data = await getWeeklyScheduleAction(monday.toISOString());
       setShifts(data.shifts || []);
       setNotes(data.notes || '');
+      setDemandConfig(data.demandConfig || DEFAULT_WEEK_DEMAND);
       setHasChanges(false);
       setAiExplanation(null);
     });
@@ -146,13 +156,55 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
       .reduce((sum, s) => sum + s.hours, 0);
   };
 
+  // Change Day Intensity (Fácil, Intermedio, Difícil/Buya)
+  const handleIntensityChange = (dayNumber: number, intensity: DayIntensity) => {
+    const config = INTENSITY_CONFIG[intensity];
+    setDemandConfig((prev) => ({
+      ...prev,
+      [dayNumber]: {
+        dayOfWeek: dayNumber,
+        intensity,
+        minCocinaLunch: config.defaultLunchCocina,
+        minCamareroLunch: config.defaultLunchCamarero,
+        minCocinaDinner: config.defaultDinnerCocina,
+        minCamareroDinner: config.defaultDinnerCamarero,
+      },
+    }));
+    setHasChanges(true);
+  };
+
+  // Adjust staffing counters
+  const handleAdjustStaff = (
+    dayNumber: number,
+    field: 'minCocinaLunch' | 'minCamareroLunch' | 'minCocinaDinner' | 'minCamareroDinner',
+    delta: number
+  ) => {
+    setDemandConfig((prev) => {
+      const current = prev[dayNumber] || DEFAULT_WEEK_DEMAND[dayNumber];
+      const newVal = Math.max(0, Math.min(5, current[field] + delta));
+      return {
+        ...prev,
+        [dayNumber]: {
+          ...current,
+          [field]: newVal,
+        },
+      };
+    });
+    setHasChanges(true);
+  };
+
   // Save changes to DB
   const handleSaveSchedule = () => {
     startTransition(async () => {
-      const res = await saveWeeklyScheduleAction(currentMonday.toISOString(), shifts, notes);
+      const res = await saveWeeklyScheduleAction(
+        currentMonday.toISOString(),
+        shifts,
+        notes,
+        demandConfig
+      );
       if (res.success) {
         setHasChanges(false);
-        showToast('Cuadrante guardado y publicado en base de datos con éxito.');
+        showToast('Cuadrante y previsión de demanda guardados con éxito.');
       } else {
         alert(res.error || 'Error al guardar el cuadrante.');
       }
@@ -163,12 +215,12 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
   const handleGenerateAI = async () => {
     setIsAiLoading(true);
     try {
-      const result = await generateAIScheduleAction(currentMonday.toISOString());
+      const result = await generateAIScheduleAction(currentMonday.toISOString(), demandConfig);
       if (result.success) {
         setShifts(result.assignments);
         setAiExplanation(result.explanation);
         setHasChanges(true);
-        showToast('¡Cuadrante generado automáticamente con éxito según preferencias y contratos!');
+        showToast('¡Cuadrante generado automáticamente con IA según la previsión de buya y contratos!');
       }
     } catch (err) {
       console.error(err);
@@ -309,6 +361,215 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
         </div>
       </div>
 
+      {/* Seville Tavern Demand Selector Panel (Flojo vs Buya) */}
+      <div className="bg-white rounded-3xl border border-[#EADBC8] shadow-xs overflow-hidden transition-all">
+        {/* Drawer Toggle Header */}
+        <div
+          onClick={() => setIsDemandDrawerOpen(!isDemandDrawerOpen)}
+          className="px-6 py-4 bg-[#FAF8F5] border-b border-[#EADBC8] flex items-center justify-between cursor-pointer hover:bg-stone-50 transition-colors select-none"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#D4A373]/20 flex items-center justify-center text-[#9E2A2B]">
+              <SlidersHorizontal className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="font-serif font-bold text-sm md:text-base text-[#2B2523] flex items-center gap-2">
+                Previsión de Afluencia & Demanda (Días Flojos vs Buya)
+                <span className="text-[11px] font-sans font-normal px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                  Adaptativo para IA
+                </span>
+              </h4>
+              <p className="text-xs text-[#6E6259]">
+                Configura si cada día es <strong>Fácil (Flojo)</strong>, <strong>Intermedio</strong> o de <strong>Buya (Difícil)</strong> y cuántas personas se necesitan en cocina y sala.
+              </p>
+            </div>
+          </div>
+
+          <button className="text-stone-400 hover:text-[#2B2523] p-1">
+            {isDemandDrawerOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {/* Demand Cards Grid */}
+        {isDemandDrawerOpen && (
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+              {DAYS_OF_WEEK.filter((d) => !d.isClosed).map((d) => {
+                const dayConfig = demandConfig[d.dayNumber] || DEFAULT_WEEK_DEMAND[d.dayNumber];
+                const intensity = dayConfig.intensity;
+                const totalMediodia = dayConfig.minCocinaLunch + dayConfig.minCamareroLunch;
+                const totalNoche = dayConfig.minCocinaDinner + dayConfig.minCamareroDinner;
+
+                return (
+                  <div
+                    key={d.dayNumber}
+                    className={`rounded-2xl border p-3.5 flex flex-col justify-between gap-3 transition-all ${
+                      intensity === 'DIFICIL'
+                        ? 'border-rose-200 bg-rose-50/20'
+                        : intensity === 'FACIL'
+                        ? 'border-emerald-200 bg-emerald-50/20'
+                        : 'border-amber-200 bg-amber-50/20'
+                    }`}
+                  >
+                    {/* Day Name & Intensity Badge */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-serif font-bold text-sm text-[#2B2523]">
+                          {d.name}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            INTENSITY_CONFIG[intensity].badgeColor
+                          }`}
+                        >
+                          {INTENSITY_CONFIG[intensity].sublabel}
+                        </span>
+                      </div>
+
+                      {/* 3-Way Intensity Switch */}
+                      <div className="grid grid-cols-3 gap-1 mt-2 p-1 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                        {(['FACIL', 'INTERMEDIO', 'DIFICIL'] as DayIntensity[]).map((lvl) => (
+                          <button
+                            key={lvl}
+                            onClick={() => handleIntensityChange(d.dayNumber, lvl)}
+                            className={`py-1 rounded-lg text-[10px] font-bold transition-all text-center ${
+                              intensity === lvl
+                                ? lvl === 'DIFICIL'
+                                  ? 'bg-rose-600 text-white shadow-xs'
+                                  : lvl === 'FACIL'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-amber-500 text-white shadow-xs'
+                                : 'text-stone-500 hover:bg-stone-100'
+                            }`}
+                          >
+                            {lvl === 'FACIL' ? 'Fácil' : lvl === 'INTERMEDIO' ? 'Interm.' : 'Buya'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Staff Requirement Counters */}
+                    <div className="space-y-2 pt-2 border-t border-stone-200/70 text-xs">
+                      {/* Mediodía */}
+                      <div className="bg-white/80 p-2 rounded-xl border border-stone-200/60 space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-amber-950">
+                          <span className="flex items-center gap-1">
+                            <Sun className="w-3 h-3 text-amber-500" /> Mediodía
+                          </span>
+                          <span className="font-bold text-[#9E2A2B]">
+                            {totalMediodia} pers.
+                          </span>
+                        </div>
+
+                        {/* Cocina Stepper */}
+                        <div className="flex items-center justify-between text-[10px] text-stone-600">
+                          <span>Cocina:</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCocinaLunch', -1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-center font-bold text-[#2B2523]">
+                              {dayConfig.minCocinaLunch}
+                            </span>
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCocinaLunch', 1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sala Stepper */}
+                        <div className="flex items-center justify-between text-[10px] text-stone-600">
+                          <span>Camareros:</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCamareroLunch', -1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-center font-bold text-[#2B2523]">
+                              {dayConfig.minCamareroLunch}
+                            </span>
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCamareroLunch', 1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Noche */}
+                      <div className="bg-white/80 p-2 rounded-xl border border-stone-200/60 space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-950">
+                          <span className="flex items-center gap-1">
+                            <Moon className="w-3 h-3 text-indigo-500" /> Noche
+                          </span>
+                          <span className="font-bold text-[#9E2A2B]">
+                            {totalNoche} pers.
+                          </span>
+                        </div>
+
+                        {/* Cocina Stepper */}
+                        <div className="flex items-center justify-between text-[10px] text-stone-600">
+                          <span>Cocina:</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCocinaDinner', -1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-center font-bold text-[#2B2523]">
+                              {dayConfig.minCocinaDinner}
+                            </span>
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCocinaDinner', 1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sala Stepper */}
+                        <div className="flex items-center justify-between text-[10px] text-stone-600">
+                          <span>Camareros:</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCamareroDinner', -1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-center font-bold text-[#2B2523]">
+                              {dayConfig.minCamareroDinner}
+                            </span>
+                            <button
+                              onClick={() => handleAdjustStaff(d.dayNumber, 'minCamareroDinner', 1)}
+                              className="w-4 h-4 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center font-bold text-stone-700"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* AI Reasoning Box (When generated) */}
       {aiExplanation && (
         <div className="bg-amber-50/70 border border-amber-200 rounded-3xl p-5 shadow-xs animate-in fade-in slide-in-from-top-2">
@@ -371,6 +632,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
                 {DAYS_OF_WEEK.map((d, idx) => {
                   const dayDate = new Date(currentMonday);
                   dayDate.setDate(currentMonday.getDate() + idx);
+                  const dayCfg = demandConfig[d.dayNumber];
 
                   return (
                     <th
@@ -383,6 +645,19 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
                       <div className="text-[10px] font-sans font-normal text-[#6E6259]">
                         {dayDate.getDate()} {dayDate.toLocaleDateString('es-ES', { month: 'short' })}
                       </div>
+
+                      {/* Day Demand Intensity Pill */}
+                      {!d.isClosed && dayCfg && (
+                        <div className="mt-1">
+                          <span
+                            className={`inline-block text-[9px] px-2 py-0.5 rounded-full font-bold border ${
+                              INTENSITY_CONFIG[dayCfg.intensity].badgeColor
+                            }`}
+                          >
+                            {INTENSITY_CONFIG[dayCfg.intensity].label}
+                          </span>
+                        </div>
+                      )}
                     </th>
                   );
                 })}
@@ -600,6 +875,7 @@ export default function StaffScheduleView({ workers }: StaffScheduleViewProps) {
         weekStartDate={currentMonday}
         shifts={shifts}
         notes={notes}
+        demandConfig={demandConfig}
       />
     </div>
   );

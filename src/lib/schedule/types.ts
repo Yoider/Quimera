@@ -80,3 +80,75 @@ export const PREFERENCE_LABELS: Record<ShiftPreference, { label: string; desc: s
   MORNING_ONLY: { label: 'Solo Mediodías', desc: 'Turnos de 12:00 a 16:00' },
   NIGHT_ONLY: { label: 'Solo Noches', desc: 'Turnos de 20:00 a 00:00' },
 };
+
+// Day Intensity / Buya vs Flojo
+export type DayIntensity = 'FACIL' | 'INTERMEDIO' | 'DIFICIL';
+
+export interface DayDemand {
+  dayOfWeek: number; // 2=Martes ... 7=Domingo (1=Lunes Cerrado)
+  intensity: DayIntensity;
+  minCocinaLunch: number;
+  minCamareroLunch: number;
+  minCocinaDinner: number;
+  minCamareroDinner: number;
+}
+
+export type WeekDemandConfig = Record<number, DayDemand>;
+
+export const INTENSITY_CONFIG: Record<
+  DayIntensity,
+  {
+    label: string;
+    sublabel: string;
+    badgeColor: string;
+    tagColor: string;
+    description: string;
+    defaultLunchCocina: number;
+    defaultLunchCamarero: number;
+    defaultDinnerCocina: number;
+    defaultDinnerCamarero: number;
+  }
+> = {
+  FACIL: {
+    label: 'Fácil',
+    sublabel: 'Día Flojo',
+    badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    tagColor: 'bg-emerald-500',
+    description: 'Baja afluencia. Servicio cubierto con plantilla mínima (1 cocina, 1 camarero).',
+    defaultLunchCocina: 1,
+    defaultLunchCamarero: 1,
+    defaultDinnerCocina: 1,
+    defaultDinnerCamarero: 1,
+  },
+  INTERMEDIO: {
+    label: 'Intermedio',
+    sublabel: 'Día Normal',
+    badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+    tagColor: 'bg-amber-500',
+    description: 'Afluencia estándar. Refuerzo en sala para el turno de noche.',
+    defaultLunchCocina: 1,
+    defaultLunchCamarero: 1,
+    defaultDinnerCocina: 1,
+    defaultDinnerCamarero: 2,
+  },
+  DIFICIL: {
+    label: 'Difícil',
+    sublabel: 'Día de Buya',
+    badgeColor: 'bg-rose-100 text-rose-900 border-rose-300',
+    tagColor: 'bg-rose-500',
+    description: 'Máxima afluencia (Buya). Refuerzo completo en cocina y sala en ambos turnos.',
+    defaultLunchCocina: 2,
+    defaultLunchCamarero: 2,
+    defaultDinnerCocina: 2,
+    defaultDinnerCamarero: 2,
+  },
+};
+
+export const DEFAULT_WEEK_DEMAND: WeekDemandConfig = {
+  2: { dayOfWeek: 2, intensity: 'FACIL', minCocinaLunch: 1, minCamareroLunch: 1, minCocinaDinner: 1, minCamareroDinner: 1 },
+  3: { dayOfWeek: 3, intensity: 'FACIL', minCocinaLunch: 1, minCamareroLunch: 1, minCocinaDinner: 1, minCamareroDinner: 1 },
+  4: { dayOfWeek: 4, intensity: 'INTERMEDIO', minCocinaLunch: 1, minCamareroLunch: 1, minCocinaDinner: 1, minCamareroDinner: 2 },
+  5: { dayOfWeek: 5, intensity: 'DIFICIL', minCocinaLunch: 1, minCamareroLunch: 1, minCocinaDinner: 2, minCamareroDinner: 2 },
+  6: { dayOfWeek: 6, intensity: 'DIFICIL', minCocinaLunch: 2, minCamareroLunch: 2, minCocinaDinner: 2, minCamareroDinner: 2 },
+  7: { dayOfWeek: 7, intensity: 'INTERMEDIO', minCocinaLunch: 2, minCamareroLunch: 2, minCocinaDinner: 1, minCamareroDinner: 1 },
+};

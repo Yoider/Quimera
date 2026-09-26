@@ -138,6 +138,7 @@ model WeeklySchedule {
   id            String            @id @default(cuid())
   weekStartDate DateTime          // Fecha del lunes de la semana correspondiente (00:00:00)
   notes         String?
+  demandConfig  String?           // JSON string: Previsión de demanda diaria (Fácil, Difícil/Buya, Intermedio) y plantilla requerida
   isPublished   Boolean           @default(false)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt

@@ -1,7 +1,15 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { Worker, ShiftType, StaffRole, ShiftPreference, AIScheduleResult } from './types';
+import {
+  Worker,
+  ShiftType,
+  StaffRole,
+  ShiftPreference,
+  AIScheduleResult,
+  WeekDemandConfig,
+  DEFAULT_WEEK_DEMAND,
+} from './types';
 import { generateAISchedule } from './aiScheduler';
 import { hashPassword } from '@/lib/auth/password';
 import { revalidatePath } from 'next/cache';
@@ -170,6 +178,7 @@ export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{
   weekStartDate: string;
   shifts: { userId: string; dayOfWeek: number; shiftType: ShiftType; hours: number }[];
   notes?: string;
+  demandConfig: WeekDemandConfig;
 }> {
   try {
     const monday = getMondayOfWeek(new Date(weekDateStr));
@@ -185,13 +194,24 @@ export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{
       return {
         weekStartDate: monday.toISOString(),
         shifts: [],
+        demandConfig: DEFAULT_WEEK_DEMAND,
       };
+    }
+
+    let parsedDemand = DEFAULT_WEEK_DEMAND;
+    if (schedule.demandConfig) {
+      try {
+        parsedDemand = JSON.parse(schedule.demandConfig);
+      } catch (e) {
+        console.error('Error parsing demandConfig JSON:', e);
+      }
     }
 
     return {
       scheduleId: schedule.id,
       weekStartDate: schedule.weekStartDate.toISOString(),
       notes: schedule.notes || undefined,
+      demandConfig: parsedDemand,
       shifts: schedule.shifts.map((s) => ({
         userId: s.userId,
         dayOfWeek: s.dayOfWeek,
@@ -204,6 +224,7 @@ export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{
     return {
       weekStartDate: new Date().toISOString(),
       shifts: [],
+      demandConfig: DEFAULT_WEEK_DEMAND,
     };
   }
 }
@@ -214,20 +235,24 @@ export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{
 export async function saveWeeklyScheduleAction(
   weekDateStr: string,
   shifts: { userId: string; dayOfWeek: number; shiftType: ShiftType; hours: number }[],
-  notes?: string
+  notes?: string,
+  demandConfig?: WeekDemandConfig
 ): Promise<{ success: boolean; scheduleId?: string; error?: string }> {
   try {
     const monday = getMondayOfWeek(new Date(weekDateStr));
+    const demandConfigStr = demandConfig ? JSON.stringify(demandConfig) : undefined;
 
     const schedule = await prisma.weeklySchedule.upsert({
       where: { weekStartDate: monday },
       update: {
         notes: notes || null,
+        demandConfig: demandConfigStr,
         isPublished: true,
       },
       create: {
         weekStartDate: monday,
         notes: notes || null,
+        demandConfig: demandConfigStr,
         isPublished: true,
       },
     });
@@ -258,11 +283,12 @@ export async function saveWeeklyScheduleAction(
 }
 
 /**
- * Run AI Scheduler for a given week
+ * Run AI Scheduler for a given week with custom demand configuration
  */
 export async function generateAIScheduleAction(
-  weekDateStr: string
+  weekDateStr: string,
+  demandConfig?: WeekDemandConfig
 ): Promise<AIScheduleResult> {
   const workers = await getWorkersAction();
-  return generateAISchedule(workers);
+  return generateAISchedule(workers, demandConfig);
 }
