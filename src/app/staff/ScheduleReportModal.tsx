@@ -9,7 +9,8 @@ import {
   WeekDemandConfig,
   INTENSITY_CONFIG,
 } from '@/lib/schedule/types';
-import { X, Copy, Check, Printer, FileText, Share2 } from 'lucide-react';
+import { X, Copy, Check, Printer, FileText, Share2, Download, Image as ImageIcon } from 'lucide-react';
+import { toPng } from 'html-to-image';
 
 interface ScheduleReportModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export default function ScheduleReportModal({
   demandConfig,
 }: ScheduleReportModalProps) {
   const [copied, setCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const reportRef = React.useRef<HTMLDivElement>(null);
 
   if (!isOpen) return null;
 
@@ -133,11 +136,34 @@ export default function ScheduleReportModal({
     window.print();
   };
 
+  const handleDownloadImage = async () => {
+    if (!reportRef.current) return;
+    setIsDownloading(true);
+    try {
+      const dataUrl = await toPng(reportRef.current, {
+        quality: 0.98,
+        pixelRatio: 2, // High resolution for crisp text & badges
+        backgroundColor: '#FAF8F5',
+        cacheBust: true,
+      });
+      const link = document.createElement('a');
+      const startStr = monday.toISOString().split('T')[0];
+      link.download = `cuadrante-quimera-${startStr}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Error generating image:', err);
+      alert('Error al generar la imagen del cuadrante.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-5xl w-full border border-[#D4A373]/50 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Top Bar */}
-        <div className="px-6 py-4 bg-[#2B2523] text-white flex items-center justify-between border-b border-stone-800 print:hidden">
+        <div className="px-6 py-4 bg-[#2B2523] text-white flex flex-wrap items-center justify-between gap-3 border-b border-stone-800 print:hidden">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#9E2A2B] flex items-center justify-center text-amber-200">
               <FileText className="w-5 h-5" />
@@ -152,15 +178,28 @@ export default function ScheduleReportModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Download as Image Button */}
+            <button
+              onClick={handleDownloadImage}
+              disabled={isDownloading}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#9E2A2B] to-[#D4A373] hover:brightness-110 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+              title="Descargar cuadrante en imagen PNG de alta resolución"
+            >
+              <Download className={`w-4 h-4 ${isDownloading ? 'animate-bounce' : ''}`} />
+              <span>{isDownloading ? 'Generando...' : 'Descargar Imagen (PNG)'}</span>
+            </button>
+
+            {/* Copy for WhatsApp */}
             <button
               onClick={handleCopyWhatsApp}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
             >
               {copied ? <Check className="w-4 h-4 text-emerald-200" /> : <Share2 className="w-4 h-4" />}
-              <span>{copied ? '¡Copiado para WhatsApp!' : 'Copiar para WhatsApp'}</span>
+              <span>{copied ? '¡Copiado!' : 'WhatsApp'}</span>
             </button>
 
+            {/* Print */}
             <button
               onClick={handlePrint}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
@@ -178,8 +217,8 @@ export default function ScheduleReportModal({
           </div>
         </div>
 
-        {/* Printable Content Body */}
-        <div className="p-6 md:p-8 overflow-y-auto print:p-0">
+        {/* Printable & Exportable Content Body */}
+        <div ref={reportRef} className="p-6 md:p-8 overflow-y-auto bg-[#FAF8F5] print:p-0">
           <div className="text-center mb-6">
             <span className="text-xs font-bold uppercase tracking-widest text-[#9E2A2B]">
               Taberna Quimera · Sevilla
@@ -330,13 +369,26 @@ export default function ScheduleReportModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-[#FAF8F5] border-t border-stone-200 flex items-center justify-end gap-3 print:hidden">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-stone-300 text-xs font-semibold text-[#6E6259] hover:bg-stone-100 transition-colors"
-          >
-            Cerrar Reporte
-          </button>
+        <div className="px-6 py-3 bg-[#FAF8F5] border-t border-stone-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="text-xs text-[#6E6259]">
+            💡 Puedes descargar la imagen en alta definición para compartirla por WhatsApp o imprimirla en papel.
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadImage}
+              disabled={isDownloading}
+              className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#852324] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isDownloading ? 'Generando...' : 'Descargar como Imagen (PNG)'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2 rounded-xl border border-stone-300 text-xs font-semibold text-[#6E6259] hover:bg-stone-100 transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
       </div>
     </div>
