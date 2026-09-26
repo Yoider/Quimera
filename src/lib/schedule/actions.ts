@@ -184,6 +184,35 @@ export async function createWorkerAction(data: {
 }
 
 /**
+ * Delete a worker from PostgreSQL
+ */
+export async function deleteWorkerAction(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const worker = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!worker) {
+      return { success: false, error: 'Trabajador no encontrado en el sistema.' };
+    }
+
+    // Deleting user cascades to ShiftAssignment automatically and sets Order.userId to null
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    revalidatePath('/staff');
+
+    return { success: true };
+  } catch (err) {
+    console.error('Error deleting worker:', err);
+    return { success: false, error: 'Error al eliminar el trabajador de la base de datos.' };
+  }
+}
+
+/**
  * Fetch or initialize the weekly schedule for a specific Monday date
  */
 export async function getWeeklyScheduleAction(weekDateStr: string): Promise<{

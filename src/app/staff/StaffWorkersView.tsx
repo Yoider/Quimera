@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from 'react';
 import { Worker, StaffRole, ShiftPreference, PREFERENCE_LABELS } from '@/lib/schedule/types';
-import { updateWorkerAction, createWorkerAction } from '@/lib/schedule/actions';
+import { updateWorkerAction, createWorkerAction, deleteWorkerAction } from '@/lib/schedule/actions';
 import {
   Users,
   UserPlus,
@@ -17,6 +17,8 @@ import {
   Shield,
   ChefHat,
   Utensils,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface StaffWorkersViewProps {
@@ -39,6 +41,7 @@ export default function StaffWorkersView({
 }: StaffWorkersViewProps) {
   const [workers, setWorkers] = useState<Worker[]>(initialWorkers);
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
+  const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -111,6 +114,24 @@ export default function StaffWorkersView({
         if (onWorkerUpdated) onWorkerUpdated();
       } else {
         alert(res.error || 'Error al crear trabajador');
+      }
+    });
+  };
+
+  const handleDeleteWorker = (workerId: string) => {
+    startTransition(async () => {
+      const res = await deleteWorkerAction(workerId);
+      if (res.success) {
+        const deletedWorker = workers.find((w) => w.id === workerId);
+        const newWorkers = workers.filter((w) => w.id !== workerId);
+        setWorkers(newWorkers);
+        if (onWorkersChange) onWorkersChange(newWorkers);
+        setWorkerToDelete(null);
+        if (editingWorker?.id === workerId) setEditingWorker(null);
+        showToast(`Trabajador "${deletedWorker?.name || ''}" eliminado correctamente.`);
+        if (onWorkerUpdated) onWorkerUpdated();
+      } else {
+        alert(res.error || 'Error al eliminar trabajador');
       }
     });
   };
@@ -235,13 +256,23 @@ export default function StaffWorkersView({
                   )}
                 </span>
 
-                <button
-                  onClick={() => setEditingWorker(worker)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#EADBC8] hover:border-[#9E2A2B] text-[#9E2A2B] hover:bg-[#9E2A2B]/10 text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Configurar</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingWorker(worker)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#EADBC8] hover:border-[#9E2A2B] text-[#9E2A2B] hover:bg-[#9E2A2B]/10 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Configurar</span>
+                  </button>
+
+                  <button
+                    onClick={() => setWorkerToDelete(worker)}
+                    className="inline-flex items-center justify-center p-1.5 rounded-lg border border-stone-200 hover:border-rose-400 text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs transition-colors cursor-pointer"
+                    title={`Eliminar a ${worker.name}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -393,21 +424,36 @@ export default function StaffWorkersView({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-[#EADBC8] flex items-center justify-end gap-3">
+              <div className="pt-4 border-t border-[#EADBC8] flex items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setEditingWorker(null)}
-                  className="px-4 py-2 rounded-xl border border-[#EADBC8] text-[#6E6259] font-semibold"
+                  onClick={() => {
+                    const toDel = editingWorker;
+                    setEditingWorker(null);
+                    setWorkerToDelete(toDel);
+                  }}
+                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  Cancelar
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar trabajador</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="px-5 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#832223] text-white font-bold transition-colors cursor-pointer"
-                >
-                  {isPending ? 'Guardando...' : 'Guardar Cambios'}
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingWorker(null)}
+                    className="px-4 py-2 rounded-xl border border-[#EADBC8] text-[#6E6259] font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPending}
+                    className="px-5 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#832223] text-white font-bold transition-colors cursor-pointer"
+                  >
+                    {isPending ? 'Guardando...' : 'Guardar Cambios'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -532,6 +578,59 @@ export default function StaffWorkersView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {workerToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => !isPending && setWorkerToDelete(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl border border-rose-200 shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-serif font-bold text-lg text-[#2B2523]">
+                  ¿Eliminar trabajador?
+                </h3>
+                <p className="text-xs text-[#6E6259] leading-relaxed">
+                  ¿Estás seguro de que deseas eliminar permanentemente a{' '}
+                  <strong className="text-[#2B2523]">{workerToDelete.name}</strong> (@{workerToDelete.username})?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-xl text-[11px] text-rose-800 space-y-1">
+              <p>⚠️ <strong>Atención:</strong> Esta acción no se puede deshacer.</p>
+              <p>Se eliminarán automáticamente su ficha de empleado y todos sus turnos asignados en los cuadrantes de horarios semanales.</p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setWorkerToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => handleDeleteWorker(workerToDelete.id)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isPending ? 'Eliminando...' : 'Sí, eliminar trabajador'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
