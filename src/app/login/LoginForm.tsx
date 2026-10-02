@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { loginUserAction } from '@/lib/auth/actions';
@@ -21,6 +21,22 @@ export default function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get('error');
+      if (err === 'google_cancelled') {
+        setError('Inicio de sesión con Google cancelado.');
+      } else if (err === 'token_exchange_failed' || err === 'user_info_failed') {
+        setError('Error al conectar con Google. Por favor, inténtalo de nuevo.');
+      } else if (err === 'server_configuration') {
+        setError('Configuración del servidor de Google incompleta.');
+      } else if (err) {
+        setError('No se pudo completar el inicio de sesión con Google.');
+      }
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,19 +157,15 @@ export default function LoginForm() {
         </span>
       </div>
 
-      {/* Google OAuth (Prepared for next step) */}
+      {/* Google OAuth */}
       <div className="relative">
-        <button
-          type="button"
-          onClick={() => alert('La integración directa con Google OAuth estará disponible en la próxima actualización.')}
-          className="w-full py-2.5 px-4 rounded-xl bg-white border border-[#EADBC8] hover:border-[#D4A373] text-[#2B2523] font-medium text-xs flex items-center justify-center gap-3 transition-colors shadow-2xs group cursor-pointer"
+        <a
+          href="/api/auth/google"
+          className="w-full py-2.5 px-4 rounded-xl bg-white border border-[#EADBC8] hover:border-[#D4A373] hover:bg-stone-50 text-[#2B2523] font-medium text-xs flex items-center justify-center gap-3 transition-all shadow-2xs group cursor-pointer"
         >
-          <GoogleIcon className="w-4 h-4" />
-          <span>Continuar con Google</span>
-          <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-1">
-            Próximamente
-          </span>
-        </button>
+          <GoogleIcon className="w-4 h-4 shrink-0" />
+          <span className="font-semibold">Continuar con Google</span>
+        </a>
       </div>
 
       {/* Footer link to Register */}

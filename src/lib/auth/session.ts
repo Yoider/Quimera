@@ -43,6 +43,8 @@ export async function createSession(user: SessionUser): Promise<string> {
   return token;
 }
 
+import { prisma } from '@/lib/prisma';
+
 /**
  * Reads and verifies the current session from HttpOnly cookies
  */
@@ -57,12 +59,28 @@ export async function getSession(): Promise<SessionUser | null> {
       algorithms: ['HS256'],
     });
 
+    let role = (payload.role as string) || 'CLIENTE';
+    let name = (payload.name as string) || '';
+
+    try {
+      if (payload.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: payload.id as string },
+          select: { role: true, name: true },
+        });
+        if (dbUser?.role) role = dbUser.role;
+        if (dbUser?.name) name = dbUser.name;
+      }
+    } catch {
+      // fallback to token payload
+    }
+
     return {
       id: payload.id as string,
       username: payload.username as string,
-      name: payload.name as string,
+      name,
       email: payload.email as string | undefined,
-      role: (payload.role as string) || 'CLIENTE',
+      role,
     };
   } catch {
     return null;

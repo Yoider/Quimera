@@ -162,3 +162,114 @@ model ShiftAssignment {
   @@index([scheduleId])
   @@index([userId])
 }
+
+// ==========================================
+// MÓDULO DE STOCK, PROVEEDORES & MERMAS
+// ==========================================
+
+model Supplier {
+  id               String          @id @default(cuid())
+  name             String
+  contactName      String?
+  phone            String          // Teléfono para pedidos directos vía WhatsApp
+  orderDays        String          // Días habituales de pedido (ej: "Lunes y Miércoles")
+  deliveryDays     String?         // Días/horarios de entrega (ej: "Martes y Jueves 8:00")
+  defaultOrderText String?         // Lista típica o notas de pedido recurrente
+  notes            String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  supplies         SupplyItem[]
+  prices           SupplierPrice[]
+
+  @@index([name])
+}
+
+model SupplyItem {
+  id                String          @id @default(cuid())
+  name              String
+  category          String          // CARNES, PESCADOS, QUESOS, FRUTAS_VERDURAS, PANADERIA, BEBIDAS, ACEITES_SALSAS, ENVASES_LIMPIEZA
+  currentStock      Float           @default(0.0)
+  minStock          Float           @default(5.0)  // Umbral mínimo de seguridad
+  unit              String          // kg, litros, cajas, unidades, sacos, cartones, botes
+  currentPrice      Float           @default(0.0)  // Precio de coste actual (€/unidad)
+  primarySupplierId String?
+  primarySupplier   Supplier?       @relation(fields: [primarySupplierId], references: [id], onDelete: SetNull)
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  prices            SupplierPrice[]
+  movements         StockMovement[]
+  wastes            FoodWaste[]
+
+  @@index([category])
+  @@index([primarySupplierId])
+}
+
+model SupplierPrice {
+  id                String      @id @default(cuid())
+  supplyItemId      String
+  supplyItem        SupplyItem  @relation(fields: [supplyItemId], references: [id], onDelete: Cascade)
+  supplierId        String
+  supplier          Supplier    @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  unitPrice         Float       // Cotización del proveedor (€)
+  formatDescription String?     // Formato de venta (ej: "Caja 10kg", "Saco 25kg", "Garrafa 5L")
+  isBestOffer       Boolean     @default(false)
+  lastUpdated       DateTime    @default(now())
+
+  @@unique([supplyItemId, supplierId])
+  @@index([supplyItemId])
+  @@index([supplierId])
+}
+
+model StockMovement {
+  id           String      @id @default(cuid())
+  supplyItemId String
+  supplyItem   SupplyItem  @relation(fields: [supplyItemId], references: [id], onDelete: Cascade)
+  type         String      // IN (Recepción de compra), OUT (Consumo cocina/barra), ADJUSTMENT (Conteo manual), WASTE (Merma)
+  quantity     Float       // Cantidad (+ o -)
+  reason       String?     // Motivo del movimiento
+  loggedBy     String?     // Nombre del empleado que registró el movimiento
+  createdAt    DateTime    @default(now())
+
+  @@index([supplyItemId])
+  @@index([createdAt])
+}
+
+model FoodWaste {
+  id            String      @id @default(cuid())
+  supplyItemId  String?
+  supplyItem    SupplyItem? @relation(fields: [supplyItemId], references: [id], onDelete: SetNull)
+  itemName      String      // Nombre del producto o plato desechado
+  quantity      Float       // Cantidad desechada
+  unit          String      // kg, raciones, unidades, litros
+  estimatedCost Float       @default(0.0) // Pérdida económica calculada (€)
+  reason        String      // EXPIRED (Caducado), SPOILED (Deteriorado fresco), COOKING_ERROR (Fallo cocina/quemado), LEFTOVER (Sobrante servicio), OTHER
+  loggedBy      String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+
+  @@index([supplyItemId])
+  @@index([createdAt])
+  @@index([reason])
+}
+
+model LocalEvent {
+  id               String   @id @default(cuid())
+  title            String   // ej: "Feria y Fiestas de Camas", "Paso de Hermandades del Rocío", "Derbi Sevillano"
+  description      String?
+  location         String   @default("Camas / Sevilla")
+  startDate        DateTime
+  endDate          DateTime
+  eventType        String   // FERIA_CAMAS, ROCIO_PASO, SEMANA_SANTA, FERIA_ABRIL, FUTBOL_DERBI, FESTIVO, CALOR
+  demandMultiplier Float    @default(1.5) // Multiplicador de previsión de afluencia (ej: 2.0 = +100%)
+  recommendedFocus String?  // Insumos y bebidas críticas a reforzar (ej: "Barriles Cruzcampo, Jamón, Pan mollete")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([startDate])
+  @@index([eventType])
+}

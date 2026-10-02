@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import Link from 'next/link';
 import { Category, Product } from '@/types/menu';
 import { Worker } from '@/lib/schedule/types';
@@ -8,6 +8,8 @@ import { updateProductAvailabilityAction, resetCatalogAction, deleteProductActio
 import StaffWorkersView from './StaffWorkersView';
 import StaffScheduleView from './StaffScheduleView';
 import StaffProductModal from './StaffProductModal';
+import { StaffDataModelView } from './StaffDataModelView';
+import StaffStockView from './StaffStockView';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -27,6 +29,11 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  Database,
+  Package,
+  Menu,
+  X,
+  ChevronRight,
 } from 'lucide-react';
 
 interface StaffClientProps {
@@ -92,10 +99,76 @@ export default function StaffClient({
   const [workers, setWorkers] = useState<Worker[]>(initialWorkers);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'workers' | 'schedule'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'workers' | 'schedule' | 'datamodel' | 'stock'>('inventory');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [orders, setOrders] = useState<MockOrder[]>(INITIAL_MOCK_ORDERS);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Close sidebar on ESC key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const navItems = [
+    {
+      id: 'inventory' as const,
+      title: 'Control de Disponibilidad',
+      description: 'Gestión de platos, fotos, precios y alérgenos',
+      icon: Layers,
+      badge: `${products.length}`,
+      badgeClass: 'bg-stone-800 text-stone-300 border border-stone-700',
+    },
+    {
+      id: 'orders' as const,
+      title: 'Comandas en Curso',
+      description: 'Seguimiento de pedidos de mesas y barra',
+      icon: ClipboardList,
+      badge: `${orders.filter((o) => o.status !== 'SERVED').length}`,
+      badgeClass: 'bg-amber-900/60 text-amber-300 border border-amber-700',
+    },
+    {
+      id: 'workers' as const,
+      title: 'Gestión de Plantilla',
+      description: 'Personal, roles, turnos y preferencias',
+      icon: Users,
+      badge: `${workers.length}`,
+      badgeClass: 'bg-stone-800 text-stone-300 border border-stone-700',
+    },
+    {
+      id: 'schedule' as const,
+      title: 'Cuadrante de Horarios',
+      description: 'Planificación semanal con algoritmo IA y PDF',
+      icon: Calendar,
+      badge: 'IA',
+      badgeClass: 'bg-gradient-to-r from-amber-500 to-[#9E2A2B] text-white',
+    },
+    {
+      id: 'stock' as const,
+      title: 'Stock & Proveedores',
+      description: 'Existencias, pedidos WhatsApp, mermas y eventos',
+      icon: Package,
+      badge: 'Excel',
+      badgeClass: 'bg-emerald-950 text-emerald-300 border border-emerald-800',
+    },
+    {
+      id: 'datamodel' as const,
+      title: 'Modelo de Datos Relacional',
+      description: 'Lienzo canvas interactivo de tablas y relaciones',
+      icon: Database,
+      badge: 'Canvas',
+      badgeClass: 'bg-purple-950 text-purple-300 border border-purple-800',
+    },
+  ];
+
+  const currentNav = navItems.find((n) => n.id === activeTab) || navItems[0];
+  const CurrentNavIcon = currentNav.icon;
 
   // Product management modals state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -192,93 +265,172 @@ export default function StaffClient({
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] flex flex-col text-[#2B2523]">
-      {/* Staff Top Navigation */}
+      {/* Staff Top Navigation Bar */}
       <header className="bg-[#2B2523] text-white border-b border-stone-800 sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3">
+          {/* Left section: Hamburger button deploying toolbar from left to right */}
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-[#D4A373]/20 hover:text-[#D4A373] text-stone-200 border border-stone-700 hover:border-[#D4A373]/40 font-semibold text-xs transition-all cursor-pointer shadow-xs active:scale-95 group"
+              aria-label="Abrir barra de navegación"
+            >
+              <Menu className="w-4 h-4 text-[#D4A373] group-hover:scale-110 transition-transform" />
+              <span className="font-semibold tracking-wide">Menú de Gestión</span>
+            </button>
+
+            <div className="h-5 w-px bg-stone-700 hidden sm:block" />
+
+            {/* Current Active Module Breadcrumb */}
+            <div className="flex items-center gap-2">
+              <span className="text-stone-400 text-xs hidden md:inline">Módulo actual:</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-stone-800/90 border border-stone-700 text-xs font-semibold text-[#D4A373]">
+                <CurrentNavIcon className="w-3.5 h-3.5 text-[#D4A373]" />
+                <span>{currentNav.title}</span>
+                {currentNav.badge && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentNav.badgeClass}`}>
+                    {currentNav.badge}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right section: Quick Metrics + Back to Public Menu */}
+          <div className="flex items-center gap-3">
+            <div className="hidden lg:flex items-center gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-medium">
+                Disponibles: <strong>{totalAvailable}</strong>
+              </span>
+              <span className="px-2.5 py-1 rounded-md bg-rose-950/80 text-rose-300 border border-rose-800 font-medium">
+                Agotados: <strong>{totalUnavailable}</strong>
+              </span>
+            </div>
+
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-amber-200 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Ver Carta Clientes</span>
+              <span className="hidden sm:inline">Ver Carta Clientes</span>
             </Link>
-            <div className="h-4 w-px bg-stone-700 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#D4A373]" />
-              <span className="font-serif font-bold tracking-wider uppercase text-sm sm:text-base">
-                Quimera Staff & Barra
+          </div>
+        </div>
+      </header>
+
+      {/* Backdrop overlay for Left-to-Right Drawer */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Toolbar / Sidebar deploying from the left towards the right */}
+      <aside
+        className={`fixed top-0 bottom-0 left-0 z-50 w-80 sm:w-88 bg-[#221C1A] text-stone-200 border-r border-stone-800 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Drawer Header */}
+        <div className="p-4 border-b border-stone-800 bg-[#1A1513] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#9E2A2B] text-amber-100 flex items-center justify-center font-serif font-bold text-lg shadow-sm border border-[#D4A373]/30">
+              Q
+            </div>
+            <div>
+              <h2 className="font-serif font-bold text-sm tracking-wider uppercase text-white leading-none">
+                Taberna Quimera
+              </h2>
+              <span className="text-[10px] tracking-wider text-[#D4A373] uppercase font-medium">
+                Panel de Staff · Camas / Sevilla
               </span>
             </div>
           </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
+            aria-label="Cerrar barra lateral"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Quick Metrics */}
-          <div className="flex items-center gap-2 sm:gap-4 text-xs">
-            <span className="px-2.5 py-1 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-medium">
-              Disponibles: <strong>{totalAvailable}</strong>
-            </span>
-            <span className="px-2.5 py-1 rounded-md bg-rose-950/80 text-rose-300 border border-rose-800 font-medium">
-              Agotados: <strong>{totalUnavailable}</strong>
-            </span>
+        {/* Modules List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 custom-scrollbar">
+          <div className="px-3 py-2 text-[10px] font-bold tracking-wider uppercase text-stone-400">
+            Módulos de Gestión
           </div>
+
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center justify-between group cursor-pointer ${
+                  isActive
+                    ? 'bg-gradient-to-r from-[#9E2A2B]/40 to-stone-800 text-white border border-[#D4A373]/50 shadow-md'
+                    : 'hover:bg-stone-800/60 text-stone-300 border border-transparent hover:border-stone-700/50'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                      isActive
+                        ? 'bg-[#9E2A2B] text-amber-200 shadow-xs'
+                        : 'bg-stone-800 text-stone-400 group-hover:text-amber-200 group-hover:bg-stone-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold truncate ${isActive ? 'text-white' : 'text-stone-200'}`}>
+                        {item.title}
+                      </span>
+                      {item.badge && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${item.badgeClass}`}>
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-400 truncate mt-0.5">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+
+                <ChevronRight
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    isActive ? 'text-[#D4A373] translate-x-0.5' : 'text-stone-600 group-hover:text-stone-400'
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
 
-        {/* Tab Selector */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-6 text-sm font-medium border-t border-stone-800 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
-              activeTab === 'inventory'
-                ? 'border-[#D4A373] text-[#D4A373]'
-                : 'border-transparent text-stone-400 hover:text-white'
-            }`}
+        {/* Drawer Footer */}
+        <div className="p-3 border-t border-stone-800 bg-[#1A1513] space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-stone-400 px-2">
+            <span>Gestión Operativa</span>
+            <span className="text-[#D4A373] font-semibold">v2.4 Activa</span>
+          </div>
+          <Link
+            href="/"
+            onClick={() => setIsSidebarOpen(false)}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 text-xs font-semibold transition-colors"
           >
-            <Layers className="w-4 h-4" />
-            <span>Control de Disponibilidad ({products.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
-              activeTab === 'orders'
-                ? 'border-[#D4A373] text-[#D4A373]'
-                : 'border-transparent text-stone-400 hover:text-white'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            <span>Comandas en Curso ({orders.filter((o) => o.status !== 'SERVED').length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('workers')}
-            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
-              activeTab === 'workers'
-                ? 'border-[#D4A373] text-[#D4A373]'
-                : 'border-transparent text-stone-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Gestión de Plantilla ({workers.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('schedule')}
-            className={`py-3 flex items-center gap-2 border-b-2 shrink-0 transition-colors ${
-              activeTab === 'schedule'
-                ? 'border-[#D4A373] text-[#D4A373]'
-                : 'border-transparent text-stone-400 hover:text-white'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="flex items-center gap-1.5">
-              Cuadrante de Horarios
-              <span className="px-1.5 py-0.5 rounded text-[10px] bg-gradient-to-r from-amber-500 to-[#9E2A2B] text-white font-bold tracking-wider uppercase">
-                IA
-              </span>
-            </span>
-          </button>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Volver a la Carta Pública</span>
+          </Link>
         </div>
-      </header>
+      </aside>
 
       {/* Notification Toast */}
       {notification && (
@@ -588,6 +740,16 @@ export default function StaffClient({
         {/* Weekly Schedule View */}
         {activeTab === 'schedule' && (
           <StaffScheduleView workers={workers} />
+        )}
+
+        {/* Stock & Suppliers View */}
+        {activeTab === 'stock' && (
+          <StaffStockView />
+        )}
+
+        {/* Relational Data Model View */}
+        {activeTab === 'datamodel' && (
+          <StaffDataModelView />
         )}
       </main>
 

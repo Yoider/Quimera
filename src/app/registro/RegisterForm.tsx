@@ -214,19 +214,15 @@ export default function RegisterForm() {
         </span>
       </div>
 
-      {/* Google OAuth (Prepared for next step) */}
+      {/* Google OAuth */}
       <div className="relative">
-        <button
-          type="button"
-          onClick={() => alert('La integración directa con Google OAuth estará disponible en la próxima actualización.')}
-          className="w-full py-2.5 px-4 rounded-xl bg-white border border-[#EADBC8] hover:border-[#D4A373] text-[#2B2523] font-medium text-xs flex items-center justify-center gap-3 transition-colors shadow-2xs group cursor-pointer"
+        <a
+          href="/api/auth/google"
+          className="w-full py-2.5 px-4 rounded-xl bg-white border border-[#EADBC8] hover:border-[#D4A373] hover:bg-stone-50 text-[#2B2523] font-medium text-xs flex items-center justify-center gap-3 transition-all shadow-2xs group cursor-pointer"
         >
-          <GoogleIcon className="w-4 h-4" />
-          <span>Continuar con Google</span>
-          <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-1">
-            Próximamente
-          </span>
-        </button>
+          <GoogleIcon className="w-4 h-4 shrink-0" />
+          <span className="font-semibold">Continuar con Google</span>
+        </a>
       </div>
 
       {/* Footer link to Login */}
