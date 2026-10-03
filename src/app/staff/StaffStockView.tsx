@@ -31,6 +31,8 @@ import {
   Award,
   Zap,
   HeartPulse,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import {
   getSupplyItemsAction,
@@ -57,10 +59,7 @@ const WASTE_REASONS: Record<string, string> = {
   OTHER: 'Otra incidencia / Rotura de envase',
 };
 
-type StockSubTab = 'inventory' | 'suppliers' | 'waste' | 'events';
-
 export default function StaffStockView() {
-  const [activeTab, setActiveTab] = useState<StockSubTab>('inventory');
   const [isPending, startTransition] = useTransition();
 
   // Data states
@@ -78,7 +77,7 @@ export default function StaffStockView() {
   const [filterLowStockOnly, setFilterLowStockOnly] = useState(false);
   const [filterWasteOnly, setFilterWasteOnly] = useState(false);
   const [filterZeroWasteOnly, setFilterZeroWasteOnly] = useState(false);
-  const [filterTodayOrdersOnly, setFilterTodayOrdersOnly] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
   // Selected item for 360 Card Over
   const [selectedCardOverItem, setSelectedCardOverItem] = useState<SupplyItemData | null>(null);
@@ -198,7 +197,7 @@ export default function StaffStockView() {
     { id: 'ENVASES_LIMPIEZA', label: '🧻 Envases & Limpieza' },
   ];
 
-  // Filtered inventory with Gamification filters
+  // Filtered inventory with stock status & search filters
   const filteredItems = items.filter((it) => {
     if (selectedCategory !== 'all' && it.category !== selectedCategory) return false;
     if (filterLowStockOnly && it.currentStock > it.minStock) return false;
@@ -215,55 +214,37 @@ export default function StaffStockView() {
     return true;
   });
 
-  // Filtered suppliers
-  const filteredSuppliers = suppliers.filter((s) => {
-    if (filterTodayOrdersOnly) {
-      const proposal = orderProposals.find((p) => p.supplierId === s.id);
-      if (!proposal?.isTodayOrderDay) return false;
-    }
-    if (searchQuery.trim().length > 0) {
-      const q = searchQuery.toLowerCase();
-      return s.name.toLowerCase().includes(q) || s.phone.includes(q);
-    }
-    return true;
-  });
-
   const lowStockCount = items.filter((i) => i.currentStock <= i.minStock).length;
   const criticalStockCount = items.filter((i) => i.currentStock <= 0).length;
   const zeroWasteCount = items.filter((i) => i.totalWasteCost === 0).length;
   const withWasteCount = items.filter((i) => i.totalWasteCost > 0).length;
-  const pantryHealthScore =
-    items.length > 0
-      ? Math.round(items.reduce((acc, i) => acc + (i.healthScore || 0), 0) / items.length)
-      : 100;
-
   const getCardHealthTheme = (status: SupplyItemData['healthStatus']) => {
     switch (status) {
       case 'HEALTHY':
         return {
-          bar: 'bg-gradient-to-r from-emerald-500 to-teal-400',
+          bar: 'bg-emerald-500',
           badge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
           border: 'border-[#EADBC8] hover:border-emerald-400',
           text: 'text-emerald-700',
-          label: 'Salud Óptima',
+          label: 'Óptimo',
           icon: ShieldCheck,
         };
       case 'WARNING':
         return {
-          bar: 'bg-gradient-to-r from-amber-500 to-yellow-400',
+          bar: 'bg-amber-500',
           badge: 'bg-amber-50 text-amber-800 border-amber-300',
           border: 'border-amber-300 ring-2 ring-amber-100/70',
           text: 'text-amber-700',
-          label: 'Alerta Stock',
+          label: 'Bajo Mínimo',
           icon: AlertTriangle,
         };
       case 'CRITICAL':
         return {
-          bar: 'bg-gradient-to-r from-rose-600 to-red-500',
-          badge: 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse',
+          bar: 'bg-rose-500',
+          badge: 'bg-rose-50 text-rose-800 border-rose-300',
           border: 'border-rose-400 ring-2 ring-rose-100',
           text: 'text-rose-700',
-          label: 'Peligro Rotura',
+          label: 'Riesgo de Rotura',
           icon: AlertTriangle,
         };
       case 'EMPTY':
@@ -271,9 +252,9 @@ export default function StaffStockView() {
         return {
           bar: 'bg-stone-500',
           badge: 'bg-stone-200 text-stone-800 border-stone-300',
-          border: 'border-red-500 ring-2 ring-red-200',
+          border: 'border-stone-400 ring-2 ring-stone-200',
           text: 'text-stone-700',
-          label: 'Agotado 💀',
+          label: 'Agotado',
           icon: AlertTriangle,
         };
     }
@@ -291,6 +272,220 @@ export default function StaffStockView() {
     return `https://wa.me/${cleanPhone}?text=${text}`;
   };
 
+  const renderFiltersContent = (isMobileDrawer = false) => (
+    <div className="bg-white rounded-3xl p-5 shadow-xs border border-[#EADBC8] space-y-5">
+      {/* Header if mobile */}
+      {isMobileDrawer && (
+        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4 text-[#9E2A2B]" />
+            <h3 className="font-serif font-bold text-base text-[#2B2523]">Filtros & Categorías</h3>
+          </div>
+          <button
+            onClick={() => setIsFilterDrawerOpen(false)}
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {/* CTA Button: Add item */}
+      <button
+        onClick={() => {
+          if (isMobileDrawer) setIsFilterDrawerOpen(false);
+          setIsNewItemModalOpen(true);
+        }}
+        className="w-full py-2.5 px-4 rounded-xl bg-[#9E2A2B] hover:bg-[#852223] text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+      >
+        <Plus className="w-4 h-4" />
+        <span>+ Añadir Nuevo Insumo</span>
+      </button>
+
+      {/* Search omnibox */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-500 block">
+          Búsqueda de Insumo
+        </label>
+        <div className="relative">
+          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por nombre o proveedor..."
+            className="w-full pl-9 pr-8 py-2 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20 focus:border-[#9E2A2B] bg-[#FAF8F5]"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer p-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Stock Status Filters */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-500 block">
+          Estado del Stock
+        </label>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => {
+              setFilterLowStockOnly(false);
+              setFilterWasteOnly(false);
+              setFilterZeroWasteOnly(false);
+              if (isMobileDrawer) setIsFilterDrawerOpen(false);
+            }}
+            className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+              !filterLowStockOnly && !filterWasteOnly && !filterZeroWasteOnly
+                ? 'bg-[#2B2523] text-white shadow-2xs font-bold'
+                : 'text-stone-700 hover:bg-stone-100'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Package className="w-3.5 h-3.5" />
+              <span>Todos los Insumos</span>
+            </span>
+            <span
+              className={`text-[11px] px-2 py-0.5 rounded-full ${
+                !filterLowStockOnly && !filterWasteOnly && !filterZeroWasteOnly
+                  ? 'bg-white/20 text-white'
+                  : 'bg-stone-100 text-stone-600'
+              }`}
+            >
+              {items.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setFilterLowStockOnly(!filterLowStockOnly);
+              setFilterWasteOnly(false);
+              setFilterZeroWasteOnly(false);
+              if (isMobileDrawer) setIsFilterDrawerOpen(false);
+            }}
+            className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+              filterLowStockOnly
+                ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
+                : 'text-stone-700 hover:bg-stone-100'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <AlertTriangle className={`w-3.5 h-3.5 ${filterLowStockOnly ? 'text-amber-700' : 'text-amber-500'}`} />
+              <span>Bajo Mínimo</span>
+            </span>
+            <span
+              className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                filterLowStockOnly
+                  ? 'bg-amber-200 text-amber-900'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+              }`}
+            >
+              {lowStockCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setFilterWasteOnly(!filterWasteOnly);
+              setFilterLowStockOnly(false);
+              setFilterZeroWasteOnly(false);
+              if (isMobileDrawer) setIsFilterDrawerOpen(false);
+            }}
+            className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+              filterWasteOnly
+                ? 'bg-rose-100 text-rose-900 border border-rose-300 font-bold'
+                : 'text-stone-700 hover:bg-stone-100'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <TrendingDown className={`w-3.5 h-3.5 ${filterWasteOnly ? 'text-rose-700' : 'text-rose-500'}`} />
+              <span>Con Mermas</span>
+            </span>
+            <span
+              className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                filterWasteOnly
+                  ? 'bg-rose-200 text-rose-900'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+              }`}
+            >
+              {withWasteCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setFilterZeroWasteOnly(!filterZeroWasteOnly);
+              setFilterLowStockOnly(false);
+              setFilterWasteOnly(false);
+              if (isMobileDrawer) setIsFilterDrawerOpen(false);
+            }}
+            className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+              filterZeroWasteOnly
+                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold'
+                : 'text-stone-700 hover:bg-stone-100'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className={`w-3.5 h-3.5 ${filterZeroWasteOnly ? 'text-emerald-700' : 'text-emerald-500'}`} />
+              <span>Sin Mermas</span>
+            </span>
+            <span
+              className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                filterZeroWasteOnly
+                  ? 'bg-emerald-200 text-emerald-900'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}
+            >
+              {zeroWasteCount}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Category Selectable Menu */}
+      <div className="space-y-1.5 pt-3 border-t border-stone-100">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-stone-500 block">
+          Categorías
+        </label>
+        <div className="flex flex-col gap-1 max-h-72 overflow-y-auto pr-1">
+          {CATEGORIES.map((cat) => {
+            const count = items.filter((i) => cat.id === 'all' || i.category === cat.id).length;
+            const isSelected = selectedCategory === cat.id;
+
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setSelectedCategory(cat.id);
+                  if (isMobileDrawer) setIsFilterDrawerOpen(false);
+                }}
+                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-[#2B2523] text-white shadow-2xs font-bold'
+                    : 'text-stone-700 hover:bg-stone-100'
+                }`}
+              >
+                <span className="truncate pr-2">{cat.label}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* Toast Notification */}
@@ -301,41 +496,41 @@ export default function StaffStockView() {
         </div>
       )}
 
-      {/* Top Banner / Gamification Dashboard */}
+      {/* Top Banner / Dashboard Resumen */}
       <div className="bg-[#2B2523] rounded-3xl p-6 sm:p-8 text-white shadow-xl border border-stone-800 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#D4A373]/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D4A373]/20 border border-[#D4A373]/30 text-[#D4A373] text-xs font-semibold uppercase tracking-wider">
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>Centro Gamificado de Control · Camas (Sevilla)</span>
+                <Package className="w-3.5 h-3.5 text-[#D4A373]" />
+                <span>Gestión de Stock & Existencias · Camas (Sevilla)</span>
               </span>
-              <span className="text-stone-400 text-xs">· Despensa 360°</span>
+              <span className="text-stone-400 text-xs">· Inventario en Tiempo Real</span>
             </div>
 
             <h2 className="font-serif font-bold text-2xl sm:text-3xl text-[#FAF8F5]">
-              Stock, Proveedores & Mermas Unificados
+              Centro de Control de Existencias & Insumos
             </h2>
             <p className="text-stone-300 text-xs sm:text-sm mt-1 max-w-2xl">
-              Toda la operativa integrada en tarjetas inteligentes: barra de vida de existencias, métricas de desperdicio en tiempo real, pedidos express por WhatsApp y ficha 360° en 1 tap.
+              Control integral de existencias, aprovisionamiento con proveedores y registro de mermas para cocina y sala.
             </p>
           </div>
 
-          {/* Gamification Scoreboard */}
+          {/* Key Metrics Board */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
-            {/* Pantry Health HP */}
+            {/* Total Insumos */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Salud Despensa</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Total Insumos</span>
               <div className="flex items-center justify-center gap-1 mt-0.5">
-                <HeartPulse className="w-4 h-4 text-emerald-400" />
-                <span className="font-serif font-bold text-xl sm:text-2xl text-emerald-300">{pantryHealthScore}% HP</span>
+                <Package className="w-4 h-4 text-stone-300" />
+                <span className="font-serif font-bold text-xl sm:text-2xl text-stone-100">{items.length}</span>
               </div>
             </div>
 
-            {/* At Risk */}
+            {/* Bajo Mínimo */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">En Peligro</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Bajo Mínimo</span>
               <div className="flex items-center justify-center gap-1 mt-0.5">
                 <AlertTriangle className={`w-4 h-4 ${lowStockCount > 0 ? 'text-amber-400' : 'text-stone-500'}`} />
                 <span className={`font-serif font-bold text-xl sm:text-2xl ${lowStockCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
@@ -344,12 +539,12 @@ export default function StaffStockView() {
               </div>
             </div>
 
-            {/* Zero Waste Items */}
+            {/* Sin Mermas */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Zero Waste</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Sin Mermas</span>
               <div className="flex items-center justify-center gap-1 mt-0.5">
-                <Award className="w-4 h-4 text-amber-400" />
-                <span className="font-serif font-bold text-xl sm:text-2xl text-amber-300">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="font-serif font-bold text-xl sm:text-2xl text-emerald-300">
                   {zeroWasteCount}
                   <span className="text-xs text-stone-400 font-normal">/{items.length}</span>
                 </span>
@@ -358,7 +553,7 @@ export default function StaffStockView() {
 
             {/* Total Waste Cost */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Mermas (€)</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Pérdida Mermas</span>
               <span className="font-serif font-bold text-xl sm:text-2xl text-rose-400 mt-0.5 block">
                 −{totalWasteCost.toFixed(2)}€
               </span>
@@ -367,162 +562,104 @@ export default function StaffStockView() {
         </div>
       </div>
 
-      {/* Sub-Tab Navigation Bar */}
-      <div className="bg-white rounded-2xl p-2 shadow-sm border border-[#EADBC8] flex flex-wrap gap-2">
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'inventory'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
-              : 'text-[#6E6259] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Zap className="w-4 h-4 text-amber-300" />
-          <span>Centro de Control Gamificado ({items.length})</span>
-          {lowStockCount > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-900 text-[10px] font-bold">
-              {lowStockCount}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('suppliers')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'suppliers'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
-              : 'text-[#6E6259] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Truck className="w-4 h-4" />
-          <span>Directorio Proveedores ({suppliers.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('waste')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'waste'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
-              : 'text-[#6E6259] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Trash2 className="w-4 h-4" />
-          <span>Histórico Global Mermas ({totalWasteCost.toFixed(2)}€)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('events')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'events'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
-              : 'text-[#6E6259] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>Eventos Camas / Sevilla ({events.length})</span>
-        </button>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* SUB-TAB 1: UNIFIED GAMIFIED CARD HUB (INVENTORY, SUPPLIERS & WASTE) */}
-      {/* ========================================================================= */}
-      {activeTab === 'inventory' && (
-        <div className="space-y-4">
-          {/* Controls Bar & Quick Filter Pills */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#EADBC8] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {/* Search */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar insumo, proveedor o categoría..."
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20 focus:border-[#9E2A2B]"
-                />
-              </div>
-
-              {/* Filter Pills */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  onClick={() => {
-                    setFilterLowStockOnly(!filterLowStockOnly);
-                    setFilterWasteOnly(false);
-                    setFilterZeroWasteOnly(false);
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                    filterLowStockOnly
-                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                  <span>En Peligro ({lowStockCount})</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setFilterWasteOnly(!filterWasteOnly);
-                    setFilterLowStockOnly(false);
-                    setFilterZeroWasteOnly(false);
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                    filterWasteOnly
-                      ? 'bg-rose-100 text-rose-900 border border-rose-300'
-                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Con Mermas ({withWasteCount})</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setFilterZeroWasteOnly(!filterZeroWasteOnly);
-                    setFilterLowStockOnly(false);
-                    setFilterWasteOnly(false);
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                    filterZeroWasteOnly
-                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
-                  }`}
-                >
-                  <Award className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Zero Waste ({zeroWasteCount})</span>
-                </button>
-              </div>
-            </div>
+      {/* Main Layout: Cards Grid (Left) + Sticky Filters Sidebar (Right) */}
+      <div className="flex flex-col lg:flex-row items-start gap-6">
+        {/* Left Column: Mobile action bar + Insumos Cards Grid */}
+        <div className="flex-1 w-full min-w-0 space-y-4">
+          {/* Mobile/Tablet Bar: Open Filters Drawer + Quick Add */}
+          <div className="lg:hidden bg-white rounded-2xl p-3 shadow-xs border border-[#EADBC8] flex items-center justify-between gap-3">
+            <button
+              onClick={() => setIsFilterDrawerOpen(true)}
+              className="flex-1 py-2 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-[#9E2A2B]" />
+              <span>Filtros & Categorías</span>
+              {(filterLowStockOnly || filterWasteOnly || filterZeroWasteOnly || selectedCategory !== 'all' || searchQuery) && (
+                <span className="w-2 h-2 rounded-full bg-[#9E2A2B]" />
+              )}
+            </button>
 
             <button
               onClick={() => setIsNewItemModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#852223] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer shrink-0"
+              className="py-2 px-3.5 rounded-xl bg-[#9E2A2B] hover:bg-[#852223] text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>+ Nuevo Insumo</span>
+              <span>Insumo</span>
             </button>
           </div>
 
-          {/* Category Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-            {CATEGORIES.map((cat) => (
+          {/* Active Filter Indicators Bar (if filters active) */}
+          {(filterLowStockOnly || filterWasteOnly || filterZeroWasteOnly || selectedCategory !== 'all' || searchQuery) && (
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-2 text-xs text-amber-900">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-amber-800">Filtro activo:</span>
+                {searchQuery && (
+                  <span className="bg-white px-2 py-0.5 rounded-md border border-amber-200 text-[11px]">
+                    "{searchQuery}"
+                  </span>
+                )}
+                {selectedCategory !== 'all' && (
+                  <span className="bg-white px-2 py-0.5 rounded-md border border-amber-200 text-[11px]">
+                    {CATEGORIES.find((c) => c.id === selectedCategory)?.label}
+                  </span>
+                )}
+                {filterLowStockOnly && (
+                  <span className="bg-amber-200/80 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                    Bajo Mínimo
+                  </span>
+                )}
+                {filterWasteOnly && (
+                  <span className="bg-rose-200/80 px-2 py-0.5 rounded-md text-[11px] font-bold text-rose-900">
+                    Con Mermas
+                  </span>
+                )}
+                {filterZeroWasteOnly && (
+                  <span className="bg-emerald-200/80 px-2 py-0.5 rounded-md text-[11px] font-bold text-emerald-900">
+                    Sin Mermas
+                  </span>
+                )}
+                <span className="text-stone-500 text-[11px]">
+                  ({filteredItems.length} insumos)
+                </span>
+              </div>
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-                  selectedCategory === cat.id
-                    ? 'bg-[#2B2523] text-white shadow-2xs'
-                    : 'bg-white border border-[#EADBC8] text-stone-600 hover:bg-stone-50'
-                }`}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                  setFilterLowStockOnly(false);
+                  setFilterWasteOnly(false);
+                  setFilterZeroWasteOnly(false);
+                }}
+                className="text-[11px] font-bold text-[#9E2A2B] hover:underline cursor-pointer shrink-0"
               >
-                {cat.label}
+                Limpiar todo
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          {/* UNIFIED GAMIFIED CARDS GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {/* Cards Grid */}
+          {filteredItems.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 text-center border border-[#EADBC8] space-y-3">
+              <Package className="w-12 h-12 text-stone-300 mx-auto" />
+              <h3 className="font-serif font-bold text-lg text-[#2B2523]">No se encontraron insumos</h3>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                No hay ningún insumo que coincida con los filtros seleccionados. Prueba a restablecer la búsqueda o las categorías.
+              </p>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                  setFilterLowStockOnly(false);
+                  setFilterWasteOnly(false);
+                  setFilterZeroWasteOnly(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Restablecer filtros
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-5">
             {filteredItems.map((item) => {
               const theme = getCardHealthTheme(item.healthStatus);
               const HealthIcon = theme.icon;
@@ -545,10 +682,10 @@ export default function StaffStockView() {
                         {item.category.replace('_', ' ')}
                       </span>
 
-                      {/* Gamification Health Badge */}
+                      {/* Status Badge */}
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${theme.badge}`}>
                         <HealthIcon className="w-3 h-3" />
-                        <span>{theme.label} ({item.healthScore}% HP)</span>
+                        <span>{theme.label}</span>
                       </span>
                     </div>
 
@@ -563,10 +700,10 @@ export default function StaffStockView() {
                       </p>
                     </div>
 
-                    {/* Video-game Health Bar */}
+                    {/* Stock Level Bar */}
                     <div className="space-y-1 bg-stone-50 p-2.5 rounded-2xl border border-stone-200/70">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-stone-500 font-medium">Salud de Existencias</span>
+                        <span className="text-stone-500 font-medium">Nivel de Stock</span>
                         <span className="font-extrabold text-[#2B2523]">{item.currentStock} / {item.minStock} {item.unit}</span>
                       </div>
                       <div className="w-full h-2 rounded-full bg-stone-200 overflow-hidden">
@@ -577,13 +714,13 @@ export default function StaffStockView() {
                       </div>
                     </div>
 
-                    {/* Waste Statistics of First Glance */}
+                    {/* Waste Statistics */}
                     <div className="p-2.5 rounded-2xl border text-xs">
                       {item.totalWasteCost === 0 ? (
                         <div className="flex items-center gap-2 text-emerald-800 bg-emerald-50/70 -m-1 p-2 rounded-xl">
-                          <Award className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                           <div className="truncate">
-                            <strong className="block text-[11px] font-bold leading-tight">🏅 Desperdicio Cero</strong>
+                            <strong className="block text-[11px] font-bold leading-tight">Desperdicio Cero</strong>
                             <span className="text-[10px] text-emerald-700">100% aprovechamiento en servicio</span>
                           </div>
                         </div>
@@ -660,9 +797,9 @@ export default function StaffStockView() {
                       </a>
                     )}
 
-                    {/* 360 Open Action */}
+                    {/* Card Details Open Action */}
                     <div className="inline-flex items-center gap-1 text-[11px] font-bold text-[#9E2A2B] group-hover:translate-x-0.5 transition-transform ml-auto">
-                      <span>Ficha 360°</span>
+                      <span>Ficha Completa</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -670,301 +807,30 @@ export default function StaffStockView() {
               );
             })}
           </div>
+        )}
+      </div>
+
+        {/* Right Sticky Sidebar (Desktop PC, lg and up) */}
+        <div className="hidden lg:flex flex-col w-80 2xl:w-88 shrink-0 sticky top-24 self-start space-y-4">
+          {renderFiltersContent(false)}
         </div>
-      )}
+      </div>
 
-      {/* ========================================================================= */}
-      {/* SUB-TAB 2: PROVEEDORES & ASISTENTE DE PEDIDOS WHATSAPP */}
-      {/* ========================================================================= */}
-      {activeTab === 'suppliers' && (
-        <div className="space-y-4">
-          {/* Controls Bar */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#EADBC8] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar proveedor o teléfono..."
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20 focus:border-[#9E2A2B]"
-                />
-              </div>
-
-              <button
-                onClick={() => setFilterTodayOrdersOnly(!filterTodayOrdersOnly)}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                  filterTodayOrdersOnly
-                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                    : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
-                }`}
-              >
-                <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Toca Pedir HOY</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => setIsNewSupplierModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#852223] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Nuevo Proveedor</span>
-            </button>
-          </div>
-
-          {/* Suppliers Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredSuppliers.map((supplier) => {
-              const proposal = orderProposals.find((p) => p.supplierId === supplier.id);
-              const isToday = proposal?.isTodayOrderDay;
-              const shortages = proposal?.items.length || 0;
-
-              return (
-                <div
-                  key={supplier.id}
-                  className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between gap-4 transition-all ${
-                    isToday ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-[#EADBC8]'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="font-serif font-bold text-base text-[#2B2523]">
-                            {supplier.name}
-                          </h4>
-                          {isToday && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
-                              HOY
-                            </span>
-                          )}
-                        </div>
-                        {supplier.contactName && (
-                          <span className="text-xs text-[#6E6259] block">
-                            Contacto: {supplier.contactName}
-                          </span>
-                        )}
-                      </div>
-
-                      <a
-                        href={`tel:${supplier.phone}`}
-                        className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors"
-                        title="Llamar por teléfono"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-
-                    {/* Schedule Details */}
-                    <div className="space-y-1.5 text-xs text-stone-600 bg-stone-50 p-3 rounded-xl border border-stone-200/70">
-                      <div>
-                        <strong className="text-[#2B2523]">Días de pedido:</strong> {supplier.orderDays}
-                      </div>
-                      {supplier.deliveryDays && (
-                        <div>
-                          <strong className="text-[#2B2523]">Entrega:</strong> {supplier.deliveryDays}
-                        </div>
-                      )}
-                      {supplier.notes && (
-                        <div className="text-[11px] text-stone-500 italic mt-1">
-                          {supplier.notes}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Shortage indicator */}
-                    {shortages > 0 && (
-                      <div className="px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>{shortages} producto(s) bajo mínimos para pedir</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* WhatsApp Action Button */}
-                  <div className="pt-3 border-t border-stone-100">
-                    <button
-                      onClick={() => proposal && setSelectedProposalForOrder(proposal)}
-                      className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Pedir por WhatsApp</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+      {/* Mobile / Tablet Filter Drawer Sheet */}
+      {isFilterDrawerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 lg:hidden"
+          onClick={() => setIsFilterDrawerOpen(false)}
+        >
+          <div
+            className="w-full max-w-xs h-full bg-[#FAF8F5] p-4 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {renderFiltersContent(true)}
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* SUB-TAB 3: CONTROL DE MERMAS & DESPERDICIO */}
-      {/* ========================================================================= */}
-      {activeTab === 'waste' && (
-        <div className="space-y-6">
-          {/* Waste Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl border border-rose-200 p-5 shadow-xs bg-gradient-to-br from-rose-50/50 to-white">
-              <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider block">
-                Total Pérdida Económica
-              </span>
-              <span className="font-serif font-extrabold text-3xl text-rose-600 mt-1 block">
-                {totalWasteCost.toFixed(2)}€
-              </span>
-              <span className="text-xs text-stone-500 mt-1 block">
-                Coste acumulado en comida y producto desechado
-              </span>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-[#EADBC8] p-5 shadow-xs md:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold text-[#2B2523] uppercase tracking-wider block">
-                  Top Alimentos Desperdiciados (Optimizar Compras)
-                </span>
-                <button
-                  onClick={() => setIsNewWasteModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Registrar Merma</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {topWastedItems.length > 0 ? (
-                  topWastedItems.map((top, idx) => (
-                    <div key={idx} className="bg-stone-50 p-2.5 rounded-xl border border-stone-200">
-                      <span className="text-xs font-bold text-[#2B2523] truncate block">
-                        {top.name}
-                      </span>
-                      <span className="text-sm font-extrabold text-rose-600 block">
-                        {top.cost.toFixed(2)}€
-                      </span>
-                      <span className="text-[10px] text-stone-500 block">
-                        {top.count} registro(s)
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-xs text-stone-400 italic col-span-3">
-                    Aún no hay mermas registradas. ¡Excelente trabajo en cocina!
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Waste History Table */}
-          <div className="bg-white rounded-2xl border border-[#EADBC8] p-5 shadow-xs space-y-4">
-            <h4 className="font-serif font-bold text-base text-[#2B2523]">
-              Historial de Mermas Registradas
-            </h4>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="border-b border-stone-200 text-[#6E6259] uppercase text-[10px] tracking-wider">
-                    <th className="pb-3 font-bold">Fecha</th>
-                    <th className="pb-3 font-bold">Producto / Insumo</th>
-                    <th className="pb-3 font-bold">Cantidad</th>
-                    <th className="pb-3 font-bold">Motivo</th>
-                    <th className="pb-3 font-bold text-right">Coste (€)</th>
-                    <th className="pb-3 font-bold">Registrado por</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {wasteRecords.map((r) => (
-                    <tr key={r.id} className="hover:bg-stone-50/80 transition-colors">
-                      <td className="py-3 text-stone-500 whitespace-nowrap">{r.date}</td>
-                      <td className="py-3 font-bold text-[#2B2523]">{r.itemName}</td>
-                      <td className="py-3 font-semibold">{r.quantity} {r.unit}</td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 text-[10px] font-semibold">
-                          {r.reasonLabel}
-                        </span>
-                      </td>
-                      <td className="py-3 text-right font-bold text-rose-600">
-                        {r.estimatedCost.toFixed(2)}€
-                      </td>
-                      <td className="py-3 text-stone-500">{r.loggedBy || 'Cocina'}</td>
-                    </tr>
-                  ))}
-                  {wasteRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="py-6 text-center text-stone-400 italic">
-                        No hay registros de mermas recientes.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* SUB-TAB 4: CALENDARIO DE EVENTOS & DEMANDA CAMAS / SEVILLA */}
-      {/* ========================================================================= */}
-      {activeTab === 'events' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#EADBC8]">
-            <h3 className="font-serif font-bold text-lg text-[#2B2523]">
-              Festividades y Eventos Clave (Camas / Sevilla)
-            </h3>
-            <p className="text-xs text-[#6E6259] mt-0.5 max-w-3xl">
-              El motor de previsión anticipa picos de afluencia por ferias locales, pasos romeros, partidos de fútbol y festivos, recomendando qué insumos reforzar para evitar roturas de stock.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {events.map((ev) => (
-              <div
-                key={ev.id}
-                className="bg-white rounded-2xl border border-[#EADBC8] p-5 shadow-xs flex flex-col justify-between gap-4 hover:border-[#D4A373] transition-colors"
-              >
-                <div className="space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#9E2A2B]">
-                        {ev.location}
-                      </span>
-                      <h4 className="font-serif font-bold text-base text-[#2B2523]">
-                        {ev.title}
-                      </h4>
-                    </div>
-
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 text-xs font-extrabold shrink-0">
-                      +{Math.round((ev.demandMultiplier - 1) * 100)}% Buya
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#6E6259]">
-                    {ev.description}
-                  </p>
-
-                  <div className="text-[11px] font-semibold text-stone-600 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-[#D4A373]" />
-                    <span>{ev.startDate} - {ev.endDate}</span>
-                  </div>
-
-                  {ev.recommendedFocus && (
-                    <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl text-xs text-amber-900 space-y-1">
-                      <strong className="block text-[11px] uppercase tracking-wider text-amber-800">
-                        ⚡ Insumos Críticos a Reforzar:
-                      </strong>
-                      <span>{ev.recommendedFocus}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* MODAL: PREVIEW DE PEDIDO WHATSAPP */}

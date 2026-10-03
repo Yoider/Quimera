@@ -84,7 +84,7 @@ export default function StaffStockCardOver({
 
   if (!isOpen || !item) return null;
 
-  // Health color palette
+  // Stock status color palette
   const getHealthColors = (status: SupplyItemData['healthStatus']) => {
     switch (status) {
       case 'HEALTHY':
@@ -92,7 +92,7 @@ export default function StaffStockCardOver({
           bar: 'bg-gradient-to-r from-emerald-500 to-teal-400',
           badge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
           text: 'text-emerald-700',
-          label: 'Salud Óptima',
+          label: 'Stock Óptimo',
           icon: ShieldCheck,
         };
       case 'WARNING':
@@ -100,7 +100,7 @@ export default function StaffStockCardOver({
           bar: 'bg-gradient-to-r from-amber-500 to-yellow-400',
           badge: 'bg-amber-50 text-amber-800 border-amber-300',
           text: 'text-amber-700',
-          label: 'Alerta de Stock',
+          label: 'Bajo Mínimo',
           icon: AlertTriangle,
         };
       case 'CRITICAL':
@@ -108,7 +108,7 @@ export default function StaffStockCardOver({
           bar: 'bg-gradient-to-r from-rose-600 to-red-500',
           badge: 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse',
           text: 'text-rose-700',
-          label: 'Peligro de Rotura',
+          label: 'Riesgo de Rotura',
           icon: AlertTriangle,
         };
       case 'EMPTY':
@@ -117,7 +117,7 @@ export default function StaffStockCardOver({
           bar: 'bg-stone-500',
           badge: 'bg-stone-100 text-stone-800 border-stone-300',
           text: 'text-stone-700',
-          label: '¡Agotado!',
+          label: 'Agotado',
           icon: AlertTriangle,
         };
     }
@@ -126,7 +126,7 @@ export default function StaffStockCardOver({
   const health = getHealthColors(item.healthStatus);
   const HealthIcon = health.icon;
 
-  // Target replenish quantity to reach 100% HP
+  // Target replenish quantity to reach safe stock
   const targetStock = item.minStock * 2;
   const suggestedOrderQty = Math.max(0, Number((targetStock - item.currentStock).toFixed(1)));
   const estimatedOrderCost = Number((suggestedOrderQty * item.currentPrice).toFixed(2));
@@ -200,7 +200,7 @@ export default function StaffStockCardOver({
               </span>
               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${health.badge}`}>
                 <HealthIcon className="w-3 h-3" />
-                {health.label} ({item.healthScore}% HP)
+                {health.label}
               </span>
             </div>
 
@@ -211,11 +211,11 @@ export default function StaffStockCardOver({
               Proveedor Principal: <span className="text-[#D4A373] font-semibold">{item.primarySupplierName || 'Sin asignar'}</span>
             </p>
 
-            {/* Quick Health & Stock Indicator */}
+            {/* Quick Stock Indicator */}
             <div className="mt-4 p-3 rounded-2xl bg-stone-900/90 border border-stone-800 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-stone-300 font-medium">Barra de Salud del Insumo</span>
-                <span className={`font-bold ${health.text}`}>{item.healthScore}% HP</span>
+                <span className="text-stone-300 font-medium">Nivel de Existencias</span>
+                <span className={`font-bold ${health.text}`}>{health.label}</span>
               </div>
               <div className="w-full h-2.5 rounded-full bg-stone-800 overflow-hidden p-0.5">
                 <div
@@ -225,7 +225,7 @@ export default function StaffStockCardOver({
               </div>
               <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
                 <span>
-                  Existencias: <strong className="text-white text-xs">{item.currentStock} {item.unit}</strong> (Mín: {item.minStock} {item.unit})
+                  Existencias: <strong className="text-white text-xs">{item.currentStock} {item.unit}</strong> (Mínimo: {item.minStock} {item.unit})
                 </span>
                 <span>
                   Coste Unitario: <strong className="text-amber-300">{item.currentPrice.toFixed(2)} €/{item.unit}</strong>
@@ -350,7 +350,7 @@ export default function StaffStockCardOver({
                           Reposición Express WhatsApp
                         </h4>
                         <p className="text-[11px] text-stone-400">
-                          Restaura la barra de salud del insumo al 100% HP
+                          Calcula el pedido sugerido para reponer el nivel óptimo
                         </p>
                       </div>
                     </div>
@@ -362,7 +362,7 @@ export default function StaffStockCardOver({
 
                   <div className="p-3 rounded-xl bg-black/40 border border-emerald-900/60 text-xs text-stone-300 space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-stone-400">Objetivo para salud óptima:</span>
+                      <span className="text-stone-400">Existencias recomendadas:</span>
                       <span className="font-semibold text-white">{targetStock} {item.unit}</span>
                     </div>
                     <div className="flex justify-between">
