@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBaseUrl } from '@/lib/auth/urlHelper';
 
 export async function GET(request: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -9,10 +10,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Dynamically resolve redirect URI according to origin (localhost:3000 or quimera.n0v4.es)
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost:3000';
-  const proto = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
-  const redirectUri = `${proto}://${host}/api/auth/callback/google`;
+  // Safely resolve public base URL avoiding internal Docker hosts (0.0.0.0)
+  const baseUrl = getBaseUrl(request);
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
   const scope = encodeURIComponent('openid email profile');
   const state = Math.random().toString(36).substring(2, 15);

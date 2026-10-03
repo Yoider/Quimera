@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createSession, SessionUser } from '@/lib/auth/session';
+import { getBaseUrl } from '@/lib/auth/urlHelper';
 
 export async function GET(request: NextRequest) {
+  const baseUrl = getBaseUrl(request);
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const error = searchParams.get('error');
 
   if (error || !code) {
     console.error('Google OAuth callback error or code missing:', error);
-    return NextResponse.redirect(new URL('/login?error=google_cancelled', request.url));
+    return NextResponse.redirect(`${baseUrl}/login?error=google_cancelled`);
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -17,12 +19,10 @@ export async function GET(request: NextRequest) {
 
   if (!clientId || !clientSecret) {
     console.error('Missing Google OAuth environment variables');
-    return NextResponse.redirect(new URL('/login?error=server_configuration', request.url));
+    return NextResponse.redirect(`${baseUrl}/login?error=server_configuration`);
   }
 
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'localhost:3000';
-  const proto = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
-  const redirectUri = `${proto}://${host}/api/auth/callback/google`;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
   try {
     // 1. Exchange authorization code for tokens
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errText = await tokenResponse.text();
       console.error('Failed to exchange code with Google:', errText);
-      return NextResponse.redirect(new URL('/login?error=token_exchange_failed', request.url));
+      return NextResponse.redirect(`${baseUrl}/login?error=token_exchange_failed`);
     }
 
     const tokenData = await tokenResponse.json();
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     if (!userInfoResponse.ok) {
       console.error('Failed to fetch user info from Google');
-      return NextResponse.redirect(new URL('/login?error=user_info_failed', request.url));
+      return NextResponse.redirect(`${baseUrl}/login?error=user_info_failed`);
     }
 
     const profile = await userInfoResponse.json();
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     const picture = profile.picture || null;
 
     if (!email) {
-      return NextResponse.redirect(new URL('/login?error=email_not_provided', request.url));
+      return NextResponse.redirect(`${baseUrl}/login?error=email_not_provided`);
     }
 
     // 3. Find or create user in PostgreSQL via Prisma
@@ -118,9 +118,9 @@ export async function GET(request: NextRequest) {
     await createSession(sessionUser);
 
     // 5. Redirect to Home (logged in)
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(`${baseUrl}/`);
   } catch (err) {
     console.error('Google OAuth callback error:', err);
-    return NextResponse.redirect(new URL('/login?error=unknown_error', request.url));
+    return NextResponse.redirect(`${baseUrl}/login?error=unknown_error`);
   }
 }
