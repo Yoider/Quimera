@@ -279,16 +279,19 @@ export default function StaffWorkersView({
         })}
       </div>
 
-      {/* Edit Worker Modal */}
+      {/* Edit Worker Modal (Bottom Sheet on mobile) */}
       {editingWorker && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => setEditingWorker(null)}
         >
           <div
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#EADBC8] shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg bg-white max-sm:rounded-t-3xl max-sm:rounded-b-none sm:rounded-2xl border border-[#EADBC8] shadow-2xl p-5 sm:p-6 space-y-4 max-sm:max-h-[90vh] max-sm:overflow-y-auto animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Pull Handle */}
+            <div className="sm:hidden w-12 h-1.5 bg-stone-300 rounded-full mx-auto -mt-1 mb-2" />
+
             <div className="flex items-center justify-between border-b border-[#EADBC8] pb-3">
               <h3 className="font-serif font-bold text-lg text-[#2B2523]">
                 Editar Trabajador: {editingWorker.name}
@@ -460,16 +463,19 @@ export default function StaffWorkersView({
         </div>
       )}
 
-      {/* New Worker Modal */}
+      {/* New Worker Modal (Bottom Sheet on mobile) */}
       {isNewModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => setIsNewModalOpen(false)}
         >
           <div
-            className="w-full max-w-lg bg-white rounded-2xl border border-[#EADBC8] shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg bg-white max-sm:rounded-t-3xl max-sm:rounded-b-none sm:rounded-2xl border border-[#EADBC8] shadow-2xl p-5 sm:p-6 space-y-4 max-sm:max-h-[90vh] max-sm:overflow-y-auto animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Pull Handle */}
+            <div className="sm:hidden w-12 h-1.5 bg-stone-300 rounded-full mx-auto -mt-1 mb-2" />
+
             <div className="flex items-center justify-between border-b border-[#EADBC8] pb-3">
               <h3 className="font-serif font-bold text-lg text-[#2B2523]">
                 Dar de Alta Nuevo Empleado
@@ -582,16 +588,19 @@ export default function StaffWorkersView({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal (Bottom Sheet on mobile) */}
       {workerToDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => !isPending && setWorkerToDelete(null)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-2xl border border-rose-200 shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md bg-white max-sm:rounded-t-3xl max-sm:rounded-b-none sm:rounded-2xl border border-rose-200 shadow-2xl p-5 sm:p-6 space-y-4 max-sm:fixed max-sm:bottom-0 max-sm:inset-x-0 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Pull Handle */}
+            <div className="sm:hidden w-12 h-1.5 bg-stone-300 rounded-full mx-auto -mt-1 mb-2" />
+
             <div className="flex items-start gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
                 <AlertTriangle className="w-5 h-5" />

@@ -34,6 +34,8 @@ import {
   Menu,
   X,
   ChevronRight,
+  MoreHorizontal,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface StaffClientProps {
@@ -101,15 +103,17 @@ export default function StaffClient({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'workers' | 'schedule' | 'datamodel' | 'stock'>('inventory');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [orders, setOrders] = useState<MockOrder[]>(INITIAL_MOCK_ORDERS);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Close sidebar on ESC key
+  // Close sidebar or more sheet on ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsSidebarOpen(false);
+        setIsMoreSheetOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -267,28 +271,39 @@ export default function StaffClient({
     <div className="min-h-screen bg-[#FAF8F5] flex flex-col text-[#2B2523]">
       {/* Staff Top Navigation Bar */}
       <header className="bg-[#2B2523] text-white border-b border-stone-800 sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3">
-          {/* Left section: Hamburger button deploying toolbar from left to right */}
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+          {/* Left section: Drawer trigger on desktop, Brand logo on mobile */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Desktop Drawer button */}
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-[#D4A373]/20 hover:text-[#D4A373] text-stone-200 border border-stone-700 hover:border-[#D4A373]/40 font-semibold text-xs transition-all cursor-pointer shadow-xs active:scale-95 group"
+              className="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-[#D4A373]/20 hover:text-[#D4A373] text-stone-200 border border-stone-700 hover:border-[#D4A373]/40 font-semibold text-xs transition-all cursor-pointer shadow-xs active:scale-95 group"
               aria-label="Abrir barra de navegación"
             >
               <Menu className="w-4 h-4 text-[#D4A373] group-hover:scale-110 transition-transform" />
               <span className="font-semibold tracking-wide">Menú de Gestión</span>
             </button>
 
+            {/* Mobile Brand Emblema */}
+            <div className="md:hidden flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-lg bg-[#9E2A2B] text-amber-100 flex items-center justify-center font-serif font-bold text-xs shadow-xs border border-[#D4A373]/40">
+                Q
+              </div>
+              <span className="font-serif font-bold text-[11px] uppercase tracking-wider text-stone-200">
+                Quimera
+              </span>
+            </div>
+
             <div className="h-5 w-px bg-stone-700 hidden sm:block" />
 
             {/* Current Active Module Breadcrumb */}
-            <div className="flex items-center gap-2">
-              <span className="text-stone-400 text-xs hidden md:inline">Módulo actual:</span>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-stone-800/90 border border-stone-700 text-xs font-semibold text-[#D4A373]">
+            <div className="flex items-center gap-1.5">
+              <span className="text-stone-400 text-xs hidden lg:inline">Módulo:</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-800/90 border border-stone-700 text-xs font-semibold text-[#D4A373]">
                 <CurrentNavIcon className="w-3.5 h-3.5 text-[#D4A373]" />
-                <span>{currentNav.title}</span>
+                <span className="truncate max-w-[110px] sm:max-w-none">{currentNav.title}</span>
                 {currentNav.badge && (
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${currentNav.badgeClass}`}>
+                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${currentNav.badgeClass}`}>
                     {currentNav.badge}
                   </span>
                 )}
@@ -297,22 +312,22 @@ export default function StaffClient({
           </div>
 
           {/* Right section: Quick Metrics + Back to Public Menu */}
-          <div className="flex items-center gap-3">
-            <div className="hidden lg:flex items-center gap-2 text-xs">
-              <span className="px-2.5 py-1 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-medium">
-                Disponibles: <strong>{totalAvailable}</strong>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs">
+              <span className="px-2 py-0.5 sm:py-1 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-medium">
+                <span className="hidden sm:inline">Disponibles:</span><span className="sm:hidden">Disp:</span> <strong>{totalAvailable}</strong>
               </span>
-              <span className="px-2.5 py-1 rounded-md bg-rose-950/80 text-rose-300 border border-rose-800 font-medium">
-                Agotados: <strong>{totalUnavailable}</strong>
+              <span className="px-2 py-0.5 sm:py-1 rounded-md bg-rose-950/80 text-rose-300 border border-rose-800 font-medium">
+                <span className="hidden sm:inline">Agotados:</span><span className="sm:hidden">Agot:</span> <strong>{totalUnavailable}</strong>
               </span>
             </div>
 
             <Link
               href="/"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-amber-200 transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-amber-200 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ver Carta Clientes</span>
+              <span className="hidden sm:inline">Ver Carta</span>
             </Link>
           </div>
         </div>
@@ -441,7 +456,7 @@ export default function StaffClient({
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 md:pb-8">
         {activeTab === 'inventory' && (
           <div className="space-y-6">
             {/* Filter and Actions Bar */}
@@ -772,16 +787,19 @@ export default function StaffClient({
         />
       )}
 
-      {/* Delete Product Confirmation Modal */}
+      {/* Delete Product Confirmation Modal (Bottom Sheet on mobile, centered on desktop) */}
       {productToDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => !isPending && setProductToDelete(null)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-2xl border border-rose-200 shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md bg-white max-sm:rounded-t-3xl max-sm:rounded-b-none sm:rounded-2xl border border-rose-200 shadow-2xl p-6 space-y-4 max-sm:fixed max-sm:bottom-0 max-sm:inset-x-0 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile Pull Handle */}
+            <div className="sm:hidden w-12 h-1.5 bg-stone-300 rounded-full mx-auto -mt-2 mb-2" />
+
             <div className="flex items-start gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -807,7 +825,7 @@ export default function StaffClient({
                 type="button"
                 disabled={isPending}
                 onClick={() => setProductToDelete(null)}
-                className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs transition-colors cursor-pointer"
+                className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
@@ -815,11 +833,201 @@ export default function StaffClient({
                 type="button"
                 disabled={isPending}
                 onClick={() => handleDeleteProduct(productToDelete.id)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{isPending ? 'Eliminando...' : 'Sí, eliminar plato'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Native Bottom Navigation Bar (Fixed at bottom on phones/tablets) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#1E1917]/95 backdrop-blur-md border-t border-stone-800 shadow-2xl px-2 py-1.5 flex items-center justify-around safe-bottom">
+        <button
+          onClick={() => {
+            setActiveTab('inventory');
+            setIsMoreSheetOpen(false);
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all active:scale-90 ${
+            activeTab === 'inventory' ? 'text-[#D4A373]' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <div className="relative">
+            <Layers className="w-5 h-5" />
+            <span className="absolute -top-1.5 -right-2.5 px-1 py-0.2 rounded-full text-[9px] font-bold bg-[#9E2A2B] text-white">
+              {products.length}
+            </span>
+          </div>
+          <span className="text-[10px] font-semibold mt-1">Carta</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('orders');
+            setIsMoreSheetOpen(false);
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all active:scale-90 ${
+            activeTab === 'orders' ? 'text-[#D4A373]' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <div className="relative">
+            <ClipboardList className="w-5 h-5" />
+            {orders.filter((o) => o.status !== 'SERVED').length > 0 && (
+              <span className="absolute -top-1.5 -right-2 px-1 py-0.2 rounded-full text-[9px] font-bold bg-amber-600 text-white animate-pulse">
+                {orders.filter((o) => o.status !== 'SERVED').length}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-semibold mt-1">Comandas</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('stock');
+            setIsMoreSheetOpen(false);
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all active:scale-90 ${
+            activeTab === 'stock' ? 'text-[#D4A373]' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <div className="relative">
+            <Package className="w-5 h-5" />
+            <span className="absolute -top-1.5 -right-2.5 px-1 py-0.2 rounded-full text-[8px] font-bold bg-emerald-600 text-white">
+              Stock
+            </span>
+          </div>
+          <span className="text-[10px] font-semibold mt-1">Stock</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('schedule');
+            setIsMoreSheetOpen(false);
+          }}
+          className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all active:scale-90 ${
+            activeTab === 'schedule' ? 'text-[#D4A373]' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <div className="relative">
+            <Calendar className="w-5 h-5" />
+            <span className="absolute -top-1.5 -right-2 px-1 py-0.2 rounded-full text-[8px] font-bold bg-gradient-to-r from-amber-500 to-[#9E2A2B] text-white">
+              IA
+            </span>
+          </div>
+          <span className="text-[10px] font-semibold mt-1">Horarios</span>
+        </button>
+
+        <button
+          onClick={() => setIsMoreSheetOpen(true)}
+          className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all active:scale-90 ${
+            isMoreSheetOpen || activeTab === 'workers' || activeTab === 'datamodel'
+              ? 'text-[#D4A373]'
+              : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <div className="relative">
+            <MoreHorizontal className="w-5 h-5" />
+            {(activeTab === 'workers' || activeTab === 'datamodel') && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#D4A373]" />
+            )}
+          </div>
+          <span className="text-[10px] font-semibold mt-1">Más</span>
+        </button>
+      </nav>
+
+      {/* Mobile Bottom Sheet "Más Módulos" */}
+      {isMoreSheetOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200"
+          onClick={() => setIsMoreSheetOpen(false)}
+        >
+          <div
+            className="w-full bg-[#221C1A] text-stone-200 rounded-t-3xl border-t border-stone-700 shadow-2xl p-5 pb-8 space-y-4 max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Pull Handle */}
+            <div className="w-12 h-1.5 bg-stone-600 rounded-full mx-auto" />
+
+            <div className="flex items-center justify-between pt-1 border-b border-stone-800 pb-3">
+              <div>
+                <h3 className="font-serif font-bold text-base text-white">
+                  Más Módulos & Gestión
+                </h3>
+                <p className="text-[11px] text-[#D4A373]">
+                  Panel de Taberna Quimera · Camas
+                </p>
+              </div>
+              <button
+                onClick={() => setIsMoreSheetOpen(false)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setActiveTab('workers');
+                  setIsMoreSheetOpen(false);
+                }}
+                className={`w-full p-3.5 rounded-2xl flex items-center justify-between border transition-all active:scale-98 ${
+                  activeTab === 'workers'
+                    ? 'bg-[#9E2A2B]/30 border-[#D4A373] text-white'
+                    : 'bg-stone-800/60 border-stone-700/60 text-stone-300 hover:bg-stone-800'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <span className="font-semibold text-sm block">Gestión de Plantilla</span>
+                    <span className="text-[11px] text-stone-400">Equipo, roles, turnos y horas</span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-stone-700 text-stone-200">
+                  {workers.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('datamodel');
+                  setIsMoreSheetOpen(false);
+                }}
+                className={`w-full p-3.5 rounded-2xl flex items-center justify-between border transition-all active:scale-98 ${
+                  activeTab === 'datamodel'
+                    ? 'bg-[#9E2A2B]/30 border-[#D4A373] text-white'
+                    : 'bg-stone-800/60 border-stone-700/60 text-stone-300 hover:bg-stone-800'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <span className="font-semibold text-sm block">Modelo de Datos (ERD)</span>
+                    <span className="text-[11px] text-stone-400">Lienzo interactivo Canvas</span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-950 text-purple-300 border border-purple-800">
+                  Canvas
+                </span>
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-stone-800 space-y-2">
+              <Link
+                href="/"
+                onClick={() => setIsMoreSheetOpen(false)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 text-xs font-semibold transition-colors active:scale-98"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Volver a la Carta Pública</span>
+              </Link>
             </div>
           </div>
         </div>

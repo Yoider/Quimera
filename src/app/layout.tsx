@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Playfair_Display, Inter } from 'next/font/google';
 import './globals.css';
 
@@ -14,6 +14,15 @@ const inter = Inter({
   display: 'swap',
 });
 
+export const viewport: Viewport = {
+  themeColor: '#1E1917',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+};
+
 export const metadata: Metadata = {
   title: 'Taberna Quimera | Cervecería & Taberna Moderna en Sevilla',
   description:
@@ -28,6 +37,12 @@ export const metadata: Metadata = {
     'Marisco Huelva',
   ],
   authors: [{ name: 'Taberna Quimera' }],
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Quimera Staff',
+  },
   icons: {
     icon: '/favicon.ico',
   },

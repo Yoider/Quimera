@@ -337,7 +337,7 @@ export default function StaffProductModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200"
       onClick={() => !isPending && handleClose()}
     >
       {/* Hidden File Inputs for Native Camera and File Picker */}
@@ -358,33 +358,38 @@ export default function StaffProductModal({
       />
 
       <div
-        className="w-full max-w-2xl bg-white rounded-3xl border border-[#D4A373]/40 shadow-2xl overflow-hidden my-6 animate-in zoom-in-95 duration-200"
+        className="w-full max-w-2xl bg-white max-sm:rounded-t-3xl max-sm:rounded-b-none sm:rounded-3xl border border-[#D4A373]/40 shadow-2xl overflow-hidden max-sm:my-0 sm:my-6 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Bar */}
-        <div className="px-6 py-4 bg-[#2B2523] text-white flex items-center justify-between border-b border-stone-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#9E2A2B] flex items-center justify-center text-amber-200 shadow-sm">
-              <Utensils className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-serif font-bold text-lg leading-tight">
-                {mode === 'edit' ? `Modificar Plato: ${product?.name}` : 'Añadir Nuevo Plato a la Carta'}
-              </h3>
-              <p className="text-xs text-[#D4A373]">
-                {mode === 'edit'
-                  ? 'Actualiza los datos, foto, precio o formato del plato'
-                  : 'Registra un nuevo plato disponible en la carta digital'}
-              </p>
-            </div>
-          </div>
+        <div className="px-5 sm:px-6 py-3.5 sm:py-4 bg-[#2B2523] text-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-stone-800 gap-2">
+          {/* Mobile Pull Handle */}
+          <div className="sm:hidden w-12 h-1.5 bg-stone-500/50 rounded-full mx-auto mb-1" />
 
-          <button
-            onClick={() => !isPending && handleClose()}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#9E2A2B] flex items-center justify-center text-amber-200 shadow-sm shrink-0">
+                <Utensils className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-base sm:text-lg leading-tight">
+                  {mode === 'edit' ? `Modificar: ${product?.name}` : 'Añadir Nuevo Plato'}
+                </h3>
+                <p className="text-[11px] sm:text-xs text-[#D4A373] truncate max-w-[230px] sm:max-w-none">
+                  {mode === 'edit'
+                    ? 'Actualiza datos, foto, precio o formato'
+                    : 'Registra un nuevo plato disponible en la carta digital'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => !isPending && handleClose()}
+              className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Form */}
