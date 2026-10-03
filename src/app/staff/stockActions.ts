@@ -142,49 +142,167 @@ export interface SupplyItemData {
   primarySupplierId?: string | null;
   primarySupplierName?: string | null;
   primarySupplierPhone?: string | null;
+  primarySupplierOrderDays?: string | null;
+  primarySupplierDeliveryDays?: string | null;
   notes?: string | null;
   status: 'OPTIMAL' | 'LOW' | 'CRITICAL';
+  healthScore: number; // 0 to 100
+  healthStatus: 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'EMPTY';
+  totalWasteCost: number;
+  totalWasteQuantity: number;
+  wasteCount: number;
+  wasteRecords: FoodWasteData[];
+  recentMovements: {
+    id: string;
+    type: string;
+    quantity: number;
+    reason: string | null;
+    loggedBy?: string | null;
+    createdAt: string;
+  }[];
+  prices: {
+    id: string;
+    supplierId: string;
+    supplierName: string;
+    unitPrice: number;
+    formatDescription?: string | null;
+    isBestOffer: boolean;
+  }[];
 }
 
 export async function getSupplyItemsAction(): Promise<{ success: boolean; items: SupplyItemData[] }> {
   try {
-    const items = await prisma.supplyItem.findMany({
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
-      include: {
-        primarySupplier: {
-          select: { name: true, phone: true },
+    const [items, allWastes] = await Promise.all([
+      prisma.supplyItem.findMany({
+        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        include: {
+          primarySupplier: {
+            select: { name: true, phone: true, orderDays: true, deliveryDays: true },
+          },
+          movements: {
+            take: 8,
+            orderBy: { createdAt: 'desc' },
+          },
+          prices: {
+            include: {
+              supplier: {
+                select: { name: true },
+              },
+            },
+            orderBy: { unitPrice: 'asc' },
+          },
         },
-      },
+      }),
+      prisma.foodWaste.findMany({
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const formattedItems: SupplyItemData[] = items.map((it) => {
+      // Find matching waste records by supplyItemId or itemName match
+      const matchingWastes = allWastes.filter(
+        (w) => w.supplyItemId === it.id || (!w.supplyItemId && w.itemName.toLowerCase() === it.name.toLowerCase())
+      );
+
+      const totalWasteCost = matchingWastes.reduce((acc, w) => acc + (w.estimatedCost || 0), 0);
+      const totalWasteQuantity = matchingWastes.reduce((acc, w) => acc + (w.quantity || 0), 0);
+
+      const wasteRecords: FoodWasteData[] = matchingWastes.map((w) => ({
+        id: w.id,
+        itemName: w.itemName,
+        quantity: w.quantity,
+        unit: w.unit,
+        estimatedCost: w.estimatedCost,
+        reason: w.reason,
+        reasonLabel: WASTE_REASONS[w.reason] || w.reason,
+        loggedBy: w.loggedBy,
+        notes: w.notes,
+        date: w.createdAt.toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      }));
+
+      // Gamification Health Score (0 - 100%)
+      let healthScore = 100;
+      let healthStatus: 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'EMPTY' = 'HEALTHY';
+      let status: 'OPTIMAL' | 'LOW' | 'CRITICAL' = 'OPTIMAL';
+
+      if (it.currentStock <= 0) {
+        healthScore = 0;
+        healthStatus = 'EMPTY';
+        status = 'CRITICAL';
+      } else if (it.currentStock < it.minStock) {
+        healthScore = Math.max(8, Math.min(48, Math.round((it.currentStock / Math.max(1, it.minStock)) * 50)));
+        healthStatus = 'CRITICAL';
+        status = 'LOW';
+      } else if (it.currentStock < it.minStock * 1.5) {
+        const extra = it.currentStock - it.minStock;
+        const range = it.minStock * 0.5 || 1;
+        healthScore = Math.min(84, 50 + Math.round((extra / range) * 34));
+        healthStatus = 'WARNING';
+        status = 'OPTIMAL';
+      } else {
+        const extra = it.currentStock - it.minStock * 1.5;
+        const range = it.minStock * 0.5 || 1;
+        healthScore = Math.min(100, 85 + Math.round((extra / range) * 15));
+        healthStatus = 'HEALTHY';
+        status = 'OPTIMAL';
+      }
+
+      return {
+        id: it.id,
+        name: it.name,
+        category: it.category,
+        currentStock: it.currentStock,
+        minStock: it.minStock,
+        unit: it.unit,
+        currentPrice: it.currentPrice,
+        primarySupplierId: it.primarySupplierId,
+        primarySupplierName: it.primarySupplier?.name || null,
+        primarySupplierPhone: it.primarySupplier?.phone || null,
+        primarySupplierOrderDays: it.primarySupplier?.orderDays || null,
+        primarySupplierDeliveryDays: it.primarySupplier?.deliveryDays || null,
+        notes: it.notes,
+        status,
+        healthScore,
+        healthStatus,
+        totalWasteCost: Number(totalWasteCost.toFixed(2)),
+        totalWasteQuantity: Number(totalWasteQuantity.toFixed(2)),
+        wasteCount: matchingWastes.length,
+        wasteRecords,
+        recentMovements: it.movements.map((m) => ({
+          id: m.id,
+          type: m.type,
+          quantity: m.quantity,
+          reason: m.reason,
+          loggedBy: m.loggedBy,
+          createdAt: m.createdAt.toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        })),
+        prices: it.prices.map((p, idx) => ({
+          id: p.id,
+          supplierId: p.supplierId,
+          supplierName: p.supplier.name,
+          unitPrice: p.unitPrice,
+          formatDescription: p.formatDescription,
+          isBestOffer: idx === 0,
+        })),
+      };
     });
 
     return {
       success: true,
-      items: items.map((it) => {
-        let status: 'OPTIMAL' | 'LOW' | 'CRITICAL' = 'OPTIMAL';
-        if (it.currentStock <= 0) {
-          status = 'CRITICAL';
-        } else if (it.currentStock <= it.minStock) {
-          status = 'LOW';
-        }
-
-        return {
-          id: it.id,
-          name: it.name,
-          category: it.category,
-          currentStock: it.currentStock,
-          minStock: it.minStock,
-          unit: it.unit,
-          currentPrice: it.currentPrice,
-          primarySupplierId: it.primarySupplierId,
-          primarySupplierName: it.primarySupplier?.name || null,
-          primarySupplierPhone: it.primarySupplier?.phone || null,
-          notes: it.notes,
-          status,
-        };
-      }),
+      items: formattedItems,
     };
   } catch (error) {
-    console.error('Error al obtener insumos de stock:', error);
+    console.error('Error al obtener insumos de stock enriquecidos:', error);
     return { success: false, items: [] };
   }
 }

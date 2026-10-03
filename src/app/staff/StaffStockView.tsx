@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useTransition } from 'react';
+import StaffStockCardOver from './StaffStockCardOver';
 import {
   Package,
   Truck,
@@ -25,6 +26,11 @@ import {
   RefreshCw,
   Edit2,
   ShieldAlert,
+  ShieldCheck,
+  Flame,
+  Award,
+  Zap,
+  HeartPulse,
 } from 'lucide-react';
 import {
   getSupplyItemsAction,
@@ -70,7 +76,12 @@ export default function StaffStockView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [filterLowStockOnly, setFilterLowStockOnly] = useState(false);
+  const [filterWasteOnly, setFilterWasteOnly] = useState(false);
+  const [filterZeroWasteOnly, setFilterZeroWasteOnly] = useState(false);
   const [filterTodayOrdersOnly, setFilterTodayOrdersOnly] = useState(false);
+
+  // Selected item for 360 Card Over
+  const [selectedCardOverItem, setSelectedCardOverItem] = useState<SupplyItemData | null>(null);
 
   // Modals
   const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
@@ -97,7 +108,14 @@ export default function StaffStockView() {
         getLocalEventsAction(),
       ]);
 
-      if (itemsRes.success) setItems(itemsRes.items);
+      if (itemsRes.success) {
+        setItems(itemsRes.items);
+        // Refresh selected card over item if open
+        if (selectedCardOverItem) {
+          const fresh = itemsRes.items.find((i) => i.id === selectedCardOverItem.id);
+          if (fresh) setSelectedCardOverItem(fresh);
+        }
+      }
       if (suppRes.success) setSuppliers(suppRes.suppliers);
       if (propRes.success) setOrderProposals(propRes.proposals);
       if (wasteRes.success) {
@@ -115,17 +133,57 @@ export default function StaffStockView() {
 
   // Handle rapid quantity adjustment (+ / -)
   const handleAdjustQuantity = (item: SupplyItemData, delta: number) => {
-    const newQty = Math.max(0, item.currentStock + delta);
+    const newQty = Math.max(0, Number((item.currentStock + delta).toFixed(1)));
     setItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, currentStock: newQty } : it))
     );
 
+    if (selectedCardOverItem?.id === item.id) {
+      setSelectedCardOverItem((prev) => (prev ? { ...prev, currentStock: newQty } : null));
+    }
+
     startTransition(async () => {
-      const res = await updateStockQuantityAction(item.id, newQty, `Ajuste manual (${delta > 0 ? '+' : ''}${delta} ${item.unit})`);
+      const res = await updateStockQuantityAction(
+        item.id,
+        newQty,
+        `Ajuste manual (${delta > 0 ? '+' : ''}${delta} ${item.unit})`
+      );
       if (res.success) {
         showNotification(`Stock actualizado: "${item.name}" ahora tiene ${newQty} ${item.unit}.`);
+        loadData();
       }
     });
+  };
+
+  // Quick waste logger from 360 card over
+  const handleLogQuickWaste = async (wasteData: {
+    supplyItemId: string;
+    itemName: string;
+    quantity: number;
+    unit: string;
+    estimatedCost: number;
+    reason: string;
+    notes?: string;
+  }): Promise<boolean> => {
+    const res = await logFoodWasteAction({
+      supplyItemId: wasteData.supplyItemId,
+      itemName: wasteData.itemName,
+      quantity: wasteData.quantity,
+      unit: wasteData.unit,
+      estimatedCost: wasteData.estimatedCost,
+      reason: wasteData.reason,
+      notes: wasteData.notes,
+      loggedBy: 'Equipo Quimera',
+    });
+
+    if (res.success) {
+      showNotification(`Merma registrada: −${wasteData.quantity} ${wasteData.unit} en "${wasteData.itemName}".`);
+      loadData();
+      return true;
+    } else {
+      alert('Error al registrar la merma.');
+      return false;
+    }
   };
 
   // Categories list
@@ -140,14 +198,17 @@ export default function StaffStockView() {
     { id: 'ENVASES_LIMPIEZA', label: '🧻 Envases & Limpieza' },
   ];
 
-  // Filtered inventory
+  // Filtered inventory with Gamification filters
   const filteredItems = items.filter((it) => {
     if (selectedCategory !== 'all' && it.category !== selectedCategory) return false;
     if (filterLowStockOnly && it.currentStock > it.minStock) return false;
+    if (filterWasteOnly && it.totalWasteCost <= 0) return false;
+    if (filterZeroWasteOnly && it.totalWasteCost > 0) return false;
     if (searchQuery.trim().length > 0) {
       const q = searchQuery.toLowerCase();
       return (
         it.name.toLowerCase().includes(q) ||
+        it.category.toLowerCase().includes(q) ||
         (it.primarySupplierName && it.primarySupplierName.toLowerCase().includes(q))
       );
     }
@@ -169,6 +230,66 @@ export default function StaffStockView() {
 
   const lowStockCount = items.filter((i) => i.currentStock <= i.minStock).length;
   const criticalStockCount = items.filter((i) => i.currentStock <= 0).length;
+  const zeroWasteCount = items.filter((i) => i.totalWasteCost === 0).length;
+  const withWasteCount = items.filter((i) => i.totalWasteCost > 0).length;
+  const pantryHealthScore =
+    items.length > 0
+      ? Math.round(items.reduce((acc, i) => acc + (i.healthScore || 0), 0) / items.length)
+      : 100;
+
+  const getCardHealthTheme = (status: SupplyItemData['healthStatus']) => {
+    switch (status) {
+      case 'HEALTHY':
+        return {
+          bar: 'bg-gradient-to-r from-emerald-500 to-teal-400',
+          badge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
+          border: 'border-[#EADBC8] hover:border-emerald-400',
+          text: 'text-emerald-700',
+          label: 'Salud Óptima',
+          icon: ShieldCheck,
+        };
+      case 'WARNING':
+        return {
+          bar: 'bg-gradient-to-r from-amber-500 to-yellow-400',
+          badge: 'bg-amber-50 text-amber-800 border-amber-300',
+          border: 'border-amber-300 ring-2 ring-amber-100/70',
+          text: 'text-amber-700',
+          label: 'Alerta Stock',
+          icon: AlertTriangle,
+        };
+      case 'CRITICAL':
+        return {
+          bar: 'bg-gradient-to-r from-rose-600 to-red-500',
+          badge: 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse',
+          border: 'border-rose-400 ring-2 ring-rose-100',
+          text: 'text-rose-700',
+          label: 'Peligro Rotura',
+          icon: AlertTriangle,
+        };
+      case 'EMPTY':
+      default:
+        return {
+          bar: 'bg-stone-500',
+          badge: 'bg-stone-200 text-stone-800 border-stone-300',
+          border: 'border-red-500 ring-2 ring-red-200',
+          text: 'text-stone-700',
+          label: 'Agotado 💀',
+          icon: AlertTriangle,
+        };
+    }
+  };
+
+  const getQuickWhatsAppUrl = (item: SupplyItemData) => {
+    const phone = item.primarySupplierPhone?.replace(/\D/g, '') || '';
+    if (!phone) return null;
+    const cleanPhone = phone.startsWith('34') ? phone : `34${phone}`;
+    const targetStock = item.minStock * 2;
+    const suggestedQty = Math.max(1, Number((targetStock - item.currentStock).toFixed(1)));
+    const text = encodeURIComponent(
+      `Hola ${item.primarySupplierName || 'proveedor'}, te escribimos desde Taberna Quimera (Camas, Sevilla).\nNecesitamos pedir:\n- Insumo: ${item.name}\n- Cantidad: ${suggestedQty} ${item.unit}\n¿Nos confirmáis reparto? Muchas gracias.`
+    );
+    return `https://wa.me/${cleanPhone}?text=${text}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -180,46 +301,67 @@ export default function StaffStockView() {
         </div>
       )}
 
-      {/* Top Banner / Metrics */}
+      {/* Top Banner / Gamification Dashboard */}
       <div className="bg-[#2B2523] rounded-3xl p-6 sm:p-8 text-white shadow-xl border border-stone-800 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#D4A373]/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D4A373]/20 border border-[#D4A373]/30 text-[#D4A373] text-xs font-semibold uppercase tracking-wider">
-                <Package className="w-3.5 h-3.5" />
-                <span>Gestión de Almacén · Camas (Sevilla)</span>
+                <Flame className="w-3.5 h-3.5 text-amber-400" />
+                <span>Centro Gamificado de Control · Camas (Sevilla)</span>
               </span>
-              <span className="text-stone-400 text-xs">· Puerta del Aljarafe</span>
+              <span className="text-stone-400 text-xs">· Despensa 360°</span>
             </div>
 
             <h2 className="font-serif font-bold text-2xl sm:text-3xl text-[#FAF8F5]">
-              Stock, Proveedores & Mermas
+              Stock, Proveedores & Mermas Unificados
             </h2>
             <p className="text-stone-300 text-xs sm:text-sm mt-1 max-w-2xl">
-              Control de materias primas, pedidos directos por WhatsApp a proveedores locales, registro de desperdicios y previsión de demanda por festividades sevillanas.
+              Toda la operativa integrada en tarjetas inteligentes: barra de vida de existencias, métricas de desperdicio en tiempo real, pedidos express por WhatsApp y ficha 360° en 1 tap.
             </p>
           </div>
 
-          {/* Quick Metrics */}
+          {/* Gamification Scoreboard */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
+            {/* Pantry Health HP */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Insumos</span>
-              <span className="font-serif font-bold text-xl sm:text-2xl text-[#D4A373]">{items.length}</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Salud Despensa</span>
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <HeartPulse className="w-4 h-4 text-emerald-400" />
+                <span className="font-serif font-bold text-xl sm:text-2xl text-emerald-300">{pantryHealthScore}% HP</span>
+              </div>
             </div>
+
+            {/* At Risk */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Bajo Mínimo</span>
-              <span className={`font-serif font-bold text-xl sm:text-2xl ${lowStockCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {lowStockCount}
-              </span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">En Peligro</span>
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <AlertTriangle className={`w-4 h-4 ${lowStockCount > 0 ? 'text-amber-400' : 'text-stone-500'}`} />
+                <span className={`font-serif font-bold text-xl sm:text-2xl ${lowStockCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {lowStockCount}
+                </span>
+              </div>
             </div>
+
+            {/* Zero Waste Items */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
-              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Proveedores</span>
-              <span className="font-serif font-bold text-xl sm:text-2xl text-blue-400">{suppliers.length}</span>
+              <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Zero Waste</span>
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <Award className="w-4 h-4 text-amber-400" />
+                <span className="font-serif font-bold text-xl sm:text-2xl text-amber-300">
+                  {zeroWasteCount}
+                  <span className="text-xs text-stone-400 font-normal">/{items.length}</span>
+                </span>
+              </div>
             </div>
+
+            {/* Total Waste Cost */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 text-center">
               <span className="block text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Mermas (€)</span>
-              <span className="font-serif font-bold text-xl sm:text-2xl text-rose-400">{totalWasteCost}€</span>
+              <span className="font-serif font-bold text-xl sm:text-2xl text-rose-400 mt-0.5 block">
+                −{totalWasteCost.toFixed(2)}€
+              </span>
             </div>
           </div>
         </div>
@@ -229,14 +371,14 @@ export default function StaffStockView() {
       <div className="bg-white rounded-2xl p-2 shadow-sm border border-[#EADBC8] flex flex-wrap gap-2">
         <button
           onClick={() => setActiveTab('inventory')}
-          className={`flex-1 min-w-[140px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'inventory'
               ? 'bg-[#9E2A2B] text-white shadow-xs'
               : 'text-[#6E6259] hover:bg-[#FAF8F5]'
           }`}
         >
-          <Package className="w-4 h-4" />
-          <span>Inventario & Insumos ({items.length})</span>
+          <Zap className="w-4 h-4 text-amber-300" />
+          <span>Centro de Control Gamificado ({items.length})</span>
           {lowStockCount > 0 && (
             <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-900 text-[10px] font-bold">
               {lowStockCount}
@@ -253,7 +395,7 @@ export default function StaffStockView() {
           }`}
         >
           <Truck className="w-4 h-4" />
-          <span>Proveedores & WhatsApp ({suppliers.length})</span>
+          <span>Directorio Proveedores ({suppliers.length})</span>
         </button>
 
         <button
@@ -265,7 +407,7 @@ export default function StaffStockView() {
           }`}
         >
           <Trash2 className="w-4 h-4" />
-          <span>Control de Mermas ({totalWasteCost}€)</span>
+          <span>Histórico Global Mermas ({totalWasteCost.toFixed(2)}€)</span>
         </button>
 
         <button
@@ -282,11 +424,11 @@ export default function StaffStockView() {
       </div>
 
       {/* ========================================================================= */}
-      {/* SUB-TAB 1: INVENTARIO DE INSUMOS & STOCK */}
+      {/* SUB-TAB 1: UNIFIED GAMIFIED CARD HUB (INVENTORY, SUPPLIERS & WASTE) */}
       {/* ========================================================================= */}
       {activeTab === 'inventory' && (
         <div className="space-y-4">
-          {/* Controls Bar */}
+          {/* Controls Bar & Quick Filter Pills */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#EADBC8] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
             <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               {/* Search */}
@@ -296,23 +438,61 @@ export default function StaffStockView() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar insumo (ej: Jamón, Aceite, Huevos)..."
+                  placeholder="Buscar insumo, proveedor o categoría..."
                   className="w-full pl-9 pr-3 py-2 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20 focus:border-[#9E2A2B]"
                 />
               </div>
 
-              {/* Low stock filter toggle */}
-              <button
-                onClick={() => setFilterLowStockOnly(!filterLowStockOnly)}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-                  filterLowStockOnly
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                    : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Solo Bajo Mínimo ({lowStockCount})</span>
-              </button>
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => {
+                    setFilterLowStockOnly(!filterLowStockOnly);
+                    setFilterWasteOnly(false);
+                    setFilterZeroWasteOnly(false);
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                    filterLowStockOnly
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>En Peligro ({lowStockCount})</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setFilterWasteOnly(!filterWasteOnly);
+                    setFilterLowStockOnly(false);
+                    setFilterZeroWasteOnly(false);
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                    filterWasteOnly
+                      ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Con Mermas ({withWasteCount})</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setFilterZeroWasteOnly(!filterZeroWasteOnly);
+                    setFilterLowStockOnly(false);
+                    setFilterWasteOnly(false);
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                    filterZeroWasteOnly
+                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100'
+                  }`}
+                >
+                  <Award className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Zero Waste ({zeroWasteCount})</span>
+                </button>
+              </div>
             </div>
 
             <button
@@ -341,96 +521,149 @@ export default function StaffStockView() {
             ))}
           </div>
 
-          {/* Inventory Items Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* UNIFIED GAMIFIED CARDS GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredItems.map((item) => {
-              const isCritical = item.currentStock <= 0;
-              const isLow = item.currentStock <= item.minStock && !isCritical;
+              const theme = getCardHealthTheme(item.healthStatus);
+              const HealthIcon = theme.icon;
+              const whatsAppUrl = getQuickWhatsAppUrl(item);
+              const assetValue = Number((item.currentStock * item.currentPrice).toFixed(2));
 
               return (
                 <div
                   key={item.id}
-                  className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between gap-3 transition-all ${
-                    isCritical
-                      ? 'border-red-300 ring-2 ring-red-100'
-                      : isLow
-                      ? 'border-amber-300 ring-2 ring-amber-100'
-                      : 'border-[#EADBC8]'
-                  }`}
+                  onClick={() => setSelectedCardOverItem(item)}
+                  className={`bg-white rounded-3xl border ${theme.border} p-5 shadow-xs hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between gap-4 cursor-pointer group relative overflow-hidden`}
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E6259]">
-                          {item.category.replace('_', ' ')}
-                        </span>
-                        <h4 className="font-serif font-bold text-base text-[#2B2523]">
-                          {item.name}
-                        </h4>
-                      </div>
+                  {/* Subtle top indicator bar */}
+                  <div className={`absolute top-0 inset-x-0 h-1 ${theme.bar}`} />
 
-                      {/* Status Badge */}
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          isCritical
-                            ? 'bg-red-100 text-red-800 border border-red-200'
-                            : isLow
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        }`}
-                      >
-                        {isCritical ? 'AGOTADO' : isLow ? 'BAJO MÍNIMO' : 'ÓPTIMO'}
+                  {/* Card Header */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md">
+                        {item.category.replace('_', ' ')}
+                      </span>
+
+                      {/* Gamification Health Badge */}
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${theme.badge}`}>
+                        <HealthIcon className="w-3 h-3" />
+                        <span>{theme.label} ({item.healthScore}% HP)</span>
                       </span>
                     </div>
 
-                    {item.notes && (
-                      <p className="text-xs text-[#6E6259] line-clamp-1 italic">
-                        {item.notes}
+                    <div>
+                      <h4 className="font-serif font-bold text-lg text-[#2B2523] group-hover:text-[#9E2A2B] transition-colors leading-tight">
+                        {item.name}
+                      </h4>
+                      <p className="text-[11px] text-stone-500 mt-0.5">
+                        Coste: <strong className="text-stone-700">{item.currentPrice.toFixed(2)} €/{item.unit}</strong>
+                        {' · '}
+                        Valor en despensa: <strong className="text-stone-700">{assetValue.toFixed(2)} €</strong>
                       </p>
-                    )}
+                    </div>
 
-                    {/* Supplier tag */}
-                    {item.primarySupplierName && (
-                      <div className="flex items-center gap-1 text-[11px] text-stone-600 bg-stone-50 px-2 py-1 rounded-lg border border-stone-200">
-                        <Truck className="w-3 h-3 text-[#9E2A2B]" />
-                        <span>Proveedor: <strong>{item.primarySupplierName}</strong></span>
+                    {/* Video-game Health Bar */}
+                    <div className="space-y-1 bg-stone-50 p-2.5 rounded-2xl border border-stone-200/70">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-stone-500 font-medium">Salud de Existencias</span>
+                        <span className="font-extrabold text-[#2B2523]">{item.currentStock} / {item.minStock} {item.unit}</span>
                       </div>
-                    )}
+                      <div className="w-full h-2 rounded-full bg-stone-200 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${theme.bar}`}
+                          style={{ width: `${Math.min(100, Math.max(6, item.healthScore))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Waste Statistics of First Glance */}
+                    <div className="p-2.5 rounded-2xl border text-xs">
+                      {item.totalWasteCost === 0 ? (
+                        <div className="flex items-center gap-2 text-emerald-800 bg-emerald-50/70 -m-1 p-2 rounded-xl">
+                          <Award className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <div className="truncate">
+                            <strong className="block text-[11px] font-bold leading-tight">🏅 Desperdicio Cero</strong>
+                            <span className="text-[10px] text-emerald-700">100% aprovechamiento en servicio</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 text-rose-900 bg-rose-50/80 -m-1 p-2 rounded-xl border border-rose-200/60">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <TrendingDown className="w-4 h-4 text-rose-600 shrink-0" />
+                            <div className="truncate">
+                              <span className="text-[11px] font-bold block leading-tight">
+                                Mermas: <span className="text-rose-700">−{item.totalWasteCost.toFixed(2)} €</span>
+                              </span>
+                              <span className="text-[10px] text-rose-600 truncate block">
+                                {item.totalWasteQuantity} {item.unit} ({item.wasteCount} incidencias)
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900 shrink-0">
+                            Merma
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Primary Supplier Box */}
+                    <div className="flex items-center justify-between text-[11px] text-stone-600 bg-[#FAF8F5] px-3 py-1.5 rounded-xl border border-[#EADBC8]/70">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Truck className="w-3.5 h-3.5 text-[#9E2A2B] shrink-0" />
+                        <span className="truncate">
+                          Proveedor: <strong>{item.primarySupplierName || 'Sin asignar'}</strong>
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 shrink-0">
+                        {item.primarySupplierDeliveryDays ? `Entrega: ${item.primarySupplierDeliveryDays}` : '24h'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Stock Levels & Touch Controls */}
-                  <div className="pt-3 border-t border-stone-100 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-stone-400 block">
-                        Stock Actual / Mínimo
-                      </span>
-                      <div className="flex items-baseline gap-1">
-                        <span className={`font-sans font-extrabold text-2xl ${isCritical ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-[#2B2523]'}`}>
-                          {item.currentStock}
-                        </span>
-                        <span className="text-xs text-stone-500 font-medium">
-                          / {item.minStock} {item.unit}
-                        </span>
-                      </div>
-                    </div>
-
+                  {/* Card Footer: Quick Actions */}
+                  <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
                     {/* Quick + / - Adjuster */}
-                    <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#EADBC8] p-1 rounded-xl">
+                    <div
+                      className="flex items-center gap-1 bg-[#FAF8F5] border border-[#EADBC8] p-1 rounded-xl shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         onClick={() => handleAdjustQuantity(item, -1)}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-700 font-bold active:scale-95 transition-all cursor-pointer shadow-2xs"
+                        className="w-7 h-7 rounded-lg bg-white hover:bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-700 font-bold active:scale-95 transition-all cursor-pointer shadow-2xs"
                         title="Restar 1 unidad"
                       >
-                        <Minus className="w-3.5 h-3.5" />
+                        <Minus className="w-3 h-3" />
                       </button>
 
                       <button
                         onClick={() => handleAdjustQuantity(item, 1)}
-                        className="w-8 h-8 rounded-lg bg-[#9E2A2B] hover:bg-[#852223] text-white flex items-center justify-center font-bold active:scale-95 transition-all cursor-pointer shadow-2xs"
+                        className="w-7 h-7 rounded-lg bg-[#9E2A2B] hover:bg-[#852223] text-white flex items-center justify-center font-bold active:scale-95 transition-all cursor-pointer shadow-2xs"
                         title="Sumar 1 unidad"
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3 h-3" />
                       </button>
+                    </div>
+
+                    {/* WhatsApp Quick Trigger if in Danger */}
+                    {whatsAppUrl && item.currentStock <= item.minStock && (
+                      <a
+                        href={whatsAppUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer shrink-0"
+                        title="Pedir reposición por WhatsApp"
+                      >
+                        <MessageCircle className="w-3 h-3 fill-white" />
+                        <span>Pedir</span>
+                      </a>
+                    )}
+
+                    {/* 360 Open Action */}
+                    <div className="inline-flex items-center gap-1 text-[11px] font-bold text-[#9E2A2B] group-hover:translate-x-0.5 transition-transform ml-auto">
+                      <span>Ficha 360°</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
                 </div>
@@ -1241,6 +1474,17 @@ export default function StaffStockView() {
           </div>
         </div>
       )}
+
+      {/* Card Over 360 Drawer / Modal */}
+      <StaffStockCardOver
+        item={selectedCardOverItem}
+        isOpen={!!selectedCardOverItem}
+        onClose={() => setSelectedCardOverItem(null)}
+        onAdjustQuantity={handleAdjustQuantity}
+        onLogQuickWaste={handleLogQuickWaste}
+        events={events}
+        suppliers={suppliers}
+      />
     </div>
   );
 }
