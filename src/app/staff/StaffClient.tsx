@@ -268,10 +268,10 @@ export default function StaffClient({
   const totalUnavailable = products.filter((p) => !p.isAvailable).length;
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] flex flex-col text-[#2B2523]">
+    <div className="min-h-screen w-full bg-[#FAF8F5] flex flex-col text-[#2B2523]">
       {/* Staff Top Navigation Bar */}
-      <header className="bg-[#2B2523] text-white border-b border-stone-800 sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+      <header className="w-full bg-[#2B2523] text-white border-b border-stone-800 sticky top-0 z-30 shadow-md">
+        <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
           {/* Left section: Drawer trigger on desktop, Brand logo on mobile */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Desktop Drawer button */}
@@ -456,7 +456,7 @@ export default function StaffClient({
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 md:pb-8">
+      <main className="flex-1 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 md:pb-8">
         {activeTab === 'inventory' && (
           <div className="space-y-6">
             {/* Filter and Actions Bar */}

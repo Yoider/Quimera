@@ -18,9 +18,6 @@ export const viewport: Viewport = {
   themeColor: '#1E1917',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  viewportFit: 'cover',
 };
 
 export const metadata: Metadata = {
@@ -70,7 +67,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#2B2523] selection:bg-[#D4A373]/30 selection:text-[#9E2A2B]">
+      <body className="min-h-screen w-full flex flex-col bg-[#FAF8F5] text-[#2B2523] selection:bg-[#D4A373]/30 selection:text-[#9E2A2B]">
         {children}
       </body>
     </html>
