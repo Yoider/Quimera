@@ -329,8 +329,8 @@ export default function StaffClient({
       </div>
 
       {/* Modules List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1.5 custom-scrollbar">
-        <div className="px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase text-stone-400">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-2.5 space-y-1 custom-scrollbar">
+        <div className="px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase text-stone-400">
           Módulos de Gestión
         </div>
 
@@ -344,15 +344,15 @@ export default function StaffClient({
                 setActiveTab(item.id);
                 if (isMobile) setIsSidebarOpen(false);
               }}
-              className={`w-full text-left p-3 rounded-2xl transition-all duration-200 flex items-center justify-between group cursor-pointer ${
+              className={`w-full text-left py-2 px-2.5 rounded-xl transition-all duration-200 flex items-center justify-between group cursor-pointer ${
                 isActive
                   ? 'bg-[#9E2A2B] text-white shadow-md border border-[#9E2A2B]'
                   : 'hover:bg-[#FAF8F5] text-[#2B2523] border border-transparent hover:border-[#EADBC8]/70'
               }`}
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                     isActive
                       ? 'bg-white/20 text-white shadow-xs'
                       : 'bg-stone-100 text-stone-600 group-hover:text-[#9E2A2B] group-hover:bg-[#9E2A2B]/10'
@@ -361,26 +361,26 @@ export default function StaffClient({
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className={`text-xs font-semibold truncate ${isActive ? 'text-white' : 'text-[#2B2523]'}`}>
                       {item.title}
                     </span>
                     {item.badge && (
-                      <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                      <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold ${
                         isActive ? 'bg-white/25 text-white' : item.badgeClass
                       }`}>
                         {item.badge}
                       </span>
                     )}
                   </div>
-                  <p className={`text-[11px] truncate mt-0.5 ${isActive ? 'text-white/80' : 'text-stone-500'}`}>
+                  <p className={`text-[10px] truncate leading-tight ${isActive ? 'text-white/80' : 'text-stone-500'}`}>
                     {item.description}
                   </p>
                 </div>
               </div>
 
               <ChevronRight
-                className={`w-4 h-4 shrink-0 transition-transform ${
+                className={`w-3.5 h-3.5 shrink-0 transition-transform ${
                   isActive ? 'text-amber-200 translate-x-0.5' : 'text-stone-300 group-hover:text-stone-500'
                 }`}
               />
@@ -389,9 +389,9 @@ export default function StaffClient({
         })}
       </div>
 
-      {/* Sidebar Footer */}
-      <div className="p-3.5 border-t border-[#EADBC8] bg-[#FAF8F5] space-y-2.5 shrink-0">
-        <div className="flex items-center justify-between text-[11px] text-stone-500 px-1">
+      {/* Sidebar Footer (Bottom Left Info) */}
+      <div className="p-2.5 sm:p-3 border-t border-[#EADBC8] bg-[#FAF8F5] space-y-1.5 shrink-0">
+        <div className="flex items-center justify-between text-[10.5px] text-stone-500 px-1">
           <span>Gestión Operativa</span>
           <span className="text-[#9E2A2B] font-semibold bg-white px-2 py-0.5 rounded-md border border-[#EADBC8]">
             v2.4 Activa
@@ -402,7 +402,7 @@ export default function StaffClient({
           onClick={() => {
             if (isMobile) setIsSidebarOpen(false);
           }}
-          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white hover:bg-stone-50 text-[#2B2523] border border-[#EADBC8] text-xs font-semibold transition-colors shadow-2xs"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-white hover:bg-stone-50 text-[#2B2523] border border-[#EADBC8] text-xs font-semibold transition-colors shadow-2xs"
         >
           <ArrowLeft className="w-3.5 h-3.5 text-[#9E2A2B]" />
           <span>Volver a la Carta Pública</span>
@@ -412,9 +412,17 @@ export default function StaffClient({
   );
 
   return (
-    <div className="min-h-screen w-full bg-[#FAF8F5] flex flex-col lg:flex-row text-[#2B2523]">
+    <div
+      className={`w-full bg-[#FAF8F5] flex flex-col lg:flex-row text-[#2B2523] ${
+        activeTab === 'orders' ? 'h-screen overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       {/* Permanent Left Sidebar on Desktop (PC): Light Background with Prominent Shadow */}
-      <aside className="hidden lg:flex flex-col w-72 2xl:w-80 shrink-0 bg-white border-r border-[#EADBC8] sticky top-0 h-screen z-30 shadow-2xl">
+      <aside
+        className={`hidden lg:flex flex-col w-64 2xl:w-72 shrink-0 bg-white border-r border-[#EADBC8] z-30 shadow-2xl ${
+          activeTab === 'orders' ? 'h-full overflow-hidden' : 'sticky top-0 h-screen'
+        }`}
+      >
         {renderNavSidebar(false)}
       </aside>
 
@@ -428,7 +436,7 @@ export default function StaffClient({
 
       {/* Mobile Drawer (Left-to-Right) on < lg: Light Background */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-80 sm:w-88 bg-white border-r border-[#EADBC8] shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform lg:hidden ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-76 sm:w-80 bg-white border-r border-[#EADBC8] shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform lg:hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -436,7 +444,11 @@ export default function StaffClient({
       </aside>
 
       {/* Main Area: Top Bar + Active Module View */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div
+        className={`flex-1 flex flex-col min-w-0 ${
+          activeTab === 'orders' ? 'h-full overflow-hidden' : ''
+        }`}
+      >
         {/* Staff Top Navigation Bar */}
         <header className="w-full bg-[#2B2523] text-white border-b border-stone-800 sticky top-0 z-20 shadow-md">
           <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
@@ -511,10 +523,10 @@ export default function StaffClient({
 
       {/* Main Content Area */}
       <main
-        className={`flex-1 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full px-3 sm:px-6 lg:px-8 ${
+        className={`flex-1 min-h-0 w-full mx-auto ${
           activeTab === 'orders'
-            ? 'py-2 sm:py-3 pb-20 md:pb-4'
-            : 'py-4 sm:py-6 pb-28 md:pb-8'
+            ? 'h-full max-w-[1600px] px-3 sm:px-4 lg:px-6 py-2 flex flex-col overflow-hidden'
+            : 'max-w-7xl 2xl:max-w-[1600px] px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 md:pb-8'
         }`}
       >
         {activeTab === 'inventory' && (
@@ -690,17 +702,17 @@ export default function StaffClient({
 
         {activeTab === 'orders' && (
           /* General Floor Plan & Orders Suite */
-          <div className="space-y-3">
+          <div className="flex-1 min-h-0 flex flex-col space-y-2">
             {/* Top Toolbar */}
-            <div className="bg-white py-2.5 px-3.5 sm:px-5 rounded-2xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="shrink-0 bg-white py-2 px-3 sm:px-4 rounded-xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="font-serif text-lg sm:text-xl font-bold text-[#2B2523] flex items-center gap-2">
+                <h3 className="font-serif text-base sm:text-lg font-bold text-[#2B2523] flex items-center gap-2">
                   <span>Gestión de Sala, Mesas & Comandas</span>
-                  <span className="text-[11px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                     En Directo
                   </span>
                 </h3>
-                <p className="text-[11px] sm:text-xs text-[#6E6259]">
+                <p className="text-[11px] text-[#6E6259]">
                   Plano 2D del bar en Camas, asignación de pedidos en mesa con PDA y tablero kanban.
                 </p>
               </div>
@@ -745,21 +757,25 @@ export default function StaffClient({
             </div>
 
             {/* View Mode Rendering */}
-            {ordersViewMode === 'floor' ? (
-              <StaffFloorPlanView
-                tables={restaurantTables}
-                orders={activeOrdersList}
-                onSelectTable={(table) => setSelectedTableForPda(table)}
-                onRefreshData={loadTablesAndOrders}
-              />
-            ) : (
-              <StaffOrdersKanbanView
-                orders={activeOrdersList}
-                tables={restaurantTables}
-                onOpenPda={(table) => setSelectedTableForPda(table)}
-                onRefreshData={loadTablesAndOrders}
-              />
-            )}
+            <div className="flex-1 min-h-0 flex flex-col">
+              {ordersViewMode === 'floor' ? (
+                <StaffFloorPlanView
+                  tables={restaurantTables}
+                  orders={activeOrdersList}
+                  onSelectTable={(table) => setSelectedTableForPda(table)}
+                  onRefreshData={loadTablesAndOrders}
+                />
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <StaffOrdersKanbanView
+                    orders={activeOrdersList}
+                    tables={restaurantTables}
+                    onOpenPda={(table) => setSelectedTableForPda(table)}
+                    onRefreshData={loadTablesAndOrders}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Waiter PDA Modal */}
             {selectedTableForPda && (
