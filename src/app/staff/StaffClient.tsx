@@ -10,6 +10,15 @@ import StaffScheduleView from './StaffScheduleView';
 import StaffProductModal from './StaffProductModal';
 import { StaffDataModelView } from './StaffDataModelView';
 import StaffStockView from './StaffStockView';
+import StaffFloorPlanView from './StaffFloorPlanView';
+import StaffOrdersKanbanView from './StaffOrdersKanbanView';
+import StaffWaiterPdaModal from './StaffWaiterPdaModal';
+import {
+  RestaurantTableData,
+  ActiveOrderData,
+  getRestaurantTablesAction,
+  getActiveOrdersAction,
+} from './orderActions';
 import {
   ShieldCheck,
   ArrowLeft,
@@ -36,6 +45,8 @@ import {
   ChevronRight,
   MoreHorizontal,
   SlidersHorizontal,
+  MapPin,
+  LayoutGrid,
 } from 'lucide-react';
 
 interface StaffClientProps {
@@ -105,8 +116,29 @@ export default function StaffClient({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [orders, setOrders] = useState<MockOrder[]>(INITIAL_MOCK_ORDERS);
+  const [restaurantTables, setRestaurantTables] = useState<RestaurantTableData[]>([]);
+  const [activeOrdersList, setActiveOrdersList] = useState<ActiveOrderData[]>([]);
+  const [ordersViewMode, setOrdersViewMode] = useState<'floor' | 'kanban'>('floor');
+  const [selectedTableForPda, setSelectedTableForPda] = useState<RestaurantTableData | null>(null);
   const [isPending, startTransition] = useTransition();
   const [notification, setNotification] = useState<string | null>(null);
+
+  const loadTablesAndOrders = async () => {
+    try {
+      const [tablesRes, ordersRes] = await Promise.all([
+        getRestaurantTablesAction(),
+        getActiveOrdersAction(),
+      ]);
+      setRestaurantTables(tablesRes);
+      setActiveOrdersList(ordersRes);
+    } catch (err) {
+      console.error('Error loading tables and orders:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadTablesAndOrders();
+  }, []);
 
   // Close sidebar or more sheet on ESC key
   useEffect(() => {
@@ -114,6 +146,7 @@ export default function StaffClient({
       if (e.key === 'Escape') {
         setIsSidebarOpen(false);
         setIsMoreSheetOpen(false);
+        setSelectedTableForPda(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -132,9 +165,9 @@ export default function StaffClient({
     {
       id: 'orders' as const,
       title: 'Comandas en Curso',
-      description: 'Seguimiento de pedidos de mesas y barra',
+      description: 'Plano 2D, mesas, PDA de camareros y cocina',
       icon: ClipboardList,
-      badge: `${orders.filter((o) => o.status !== 'SERVED').length}`,
+      badge: `${activeOrdersList.length}`,
       badgeClass: 'bg-amber-100 text-amber-900 border border-amber-300',
     },
     {
@@ -380,8 +413,8 @@ export default function StaffClient({
 
   return (
     <div className="min-h-screen w-full bg-[#FAF8F5] flex flex-col lg:flex-row text-[#2B2523]">
-      {/* Permanent Left Sidebar on Desktop (PC): Light Background */}
-      <aside className="hidden lg:flex flex-col w-72 2xl:w-80 shrink-0 bg-white border-r border-[#EADBC8] sticky top-0 h-screen z-30 shadow-xs">
+      {/* Permanent Left Sidebar on Desktop (PC): Light Background with Prominent Shadow */}
+      <aside className="hidden lg:flex flex-col w-72 2xl:w-80 shrink-0 bg-white border-r border-[#EADBC8] sticky top-0 h-screen z-30 shadow-2xl">
         {renderNavSidebar(false)}
       </aside>
 
@@ -650,118 +683,94 @@ export default function StaffClient({
         )}
 
         {activeTab === 'orders' && (
-          /* Orders Board */
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
+          /* General Floor Plan & Orders Suite */
+          <div className="space-y-5">
+            {/* Top Toolbar */}
+            <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h3 className="font-serif text-2xl font-bold text-[#2B2523]">
-                  Panel de Comandas Activas
+                <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#2B2523] flex items-center gap-2">
+                  <span>Gestión de Sala, Mesas & Comandas</span>
+                  <span className="text-xs font-sans font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    En Directo
+                  </span>
                 </h3>
-                <p className="text-xs text-[#6E6259]">
-                  Seguimiento visual para cocina y barra de bebidas.
+                <p className="text-xs text-[#6E6259] mt-0.5">
+                  Plano 2D del bar en Camas, asignación de pedidos en mesa con PDA y tablero kanban.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                  Servicio en directo
-                </span>
+              {/* View Switcher: Plano 2D vs Kanban */}
+              <div className="flex items-center gap-2 bg-[#FAF8F5] p-1.5 rounded-2xl border border-[#EADBC8]">
+                <button
+                  type="button"
+                  onClick={() => setOrdersViewMode('floor')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    ordersViewMode === 'floor'
+                      ? 'bg-[#9E2A2B] text-white shadow-xs'
+                      : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Plano 2D del Bar</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrdersViewMode('kanban')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    ordersViewMode === 'kanban'
+                      ? 'bg-[#9E2A2B] text-white shadow-xs'
+                      : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Tablero Kanban ({activeOrdersList.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={loadTablesAndOrders}
+                  className="p-2 rounded-xl text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
+                  title="Actualizar mesas y comandas"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {/* Orders Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {orders.map((order) => {
-                const isPending = order.status === 'PENDING';
-                const isPreparing = order.status === 'PREPARING';
-                const isServed = order.status === 'SERVED';
+            {/* View Mode Rendering */}
+            {ordersViewMode === 'floor' ? (
+              <StaffFloorPlanView
+                tables={restaurantTables}
+                orders={activeOrdersList}
+                onSelectTable={(table) => setSelectedTableForPda(table)}
+                onRefreshData={loadTablesAndOrders}
+              />
+            ) : (
+              <StaffOrdersKanbanView
+                orders={activeOrdersList}
+                tables={restaurantTables}
+                onOpenPda={(table) => setSelectedTableForPda(table)}
+                onRefreshData={loadTablesAndOrders}
+              />
+            )}
 
-                return (
-                  <div
-                    key={order.id}
-                    className={`rounded-2xl border p-5 bg-white shadow-xs flex flex-col justify-between gap-4 ${
-                      isPending
-                        ? 'border-amber-300 ring-2 ring-amber-100'
-                        : isPreparing
-                        ? 'border-blue-300 ring-2 ring-blue-100'
-                        : 'border-stone-200 opacity-60'
-                    }`}
-                  >
-                    <div className="space-y-3">
-                      {/* Header */}
-                      <div className="flex items-center justify-between">
-                        <span className="font-serif font-bold text-lg text-[#2B2523]">
-                          {order.table}
-                        </span>
-                        <span className="text-[11px] font-medium text-[#6E6259] flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          {order.time}
-                        </span>
-                      </div>
-
-                      {/* Status Pill */}
-                      <div>
-                        {isPending && (
-                          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-bold uppercase tracking-wider">
-                            ● Pendiente de Cocina
-                          </span>
-                        )}
-                        {isPreparing && (
-                          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 text-xs font-bold uppercase tracking-wider flex items-center gap-1 w-fit">
-                            <ChefHat className="w-3.5 h-3.5" />
-                            En Preparación
-                          </span>
-                        )}
-                        {isServed && (
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-bold uppercase tracking-wider">
-                            ✓ Servido en Mesa
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Items List */}
-                      <div className="border-t border-b border-stone-100 py-3 space-y-2">
-                        {order.items.map((it, idx) => (
-                          <div key={idx} className="flex justify-between items-start text-xs">
-                            <span className="font-medium text-[#2B2523]">
-                              <strong className="text-[#9E2A2B] mr-1.5">{it.quantity}x</strong>
-                              {it.name}
-                              {it.notes && (
-                                <span className="block text-[11px] text-amber-700 italic">
-                                  Nota: {it.notes}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex justify-between items-center text-xs font-bold text-[#2B2523]">
-                        <span>Total Comanda:</span>
-                        <span className="text-sm text-[#9E2A2B]">{order.total.toFixed(2)}€</span>
-                      </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <div>
-                      {!isServed ? (
-                        <button
-                          onClick={() => handleAdvanceOrderStatus(order.id)}
-                          className="w-full py-2.5 rounded-xl bg-[#2B2523] hover:bg-[#9E2A2B] text-white text-xs font-bold uppercase tracking-wider transition-colors shadow-xs"
-                        >
-                          {isPending ? 'Pasar a "En Preparación" →' : 'Marcar como "Servido" ✓'}
-                        </button>
-                      ) : (
-                        <div className="text-center py-2 text-xs font-semibold text-stone-400">
-                          Comanda completada
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Waiter PDA Modal */}
+            {selectedTableForPda && (
+              <StaffWaiterPdaModal
+                isOpen={true}
+                onClose={() => setSelectedTableForPda(null)}
+                table={selectedTableForPda}
+                activeOrder={
+                  activeOrdersList.find(
+                    (o) => o.tableNumber === selectedTableForPda.tableNumber
+                  ) || null
+                }
+                products={products}
+                categories={initialCategories}
+                onOrderSaved={loadTablesAndOrders}
+              />
+            )}
           </div>
         )}
 

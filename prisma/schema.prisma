@@ -100,24 +100,46 @@ model StaffUser {
   orders    Order[]
 }
 
+model RestaurantTable {
+  id          String   @id @default(cuid())
+  tableNumber String   @unique // e.g. "Mesa 1", "Barra 2", "Terraza 3"
+  name        String   // Display label
+  zone        String   @default("SALON") // "SALON", "BARRA", "TERRAZA"
+  seats       Int      @default(4)
+  posX        Float    @default(50.0) // 0-100 percentage in 2D floor plan
+  posY        Float    @default(50.0) // 0-100 percentage in 2D floor plan
+  shape       String   @default("ROUND") // "ROUND", "SQUARE", "RECTANGLE", "BAR_STOOL"
+  color       String?  // custom hex color or zone default
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      Order[]
+
+  @@index([zone])
+}
+
 model Order {
-  id          String      @id @default(cuid())
-  orderNumber String      @unique // e.g. "Q-101"
-  tableNumber String      // e.g. "Mesa 4 (Terraza)", "Barra 2"
-  status      String      @default("PENDING") // PENDING, PREPARING, SERVED, PAID, CANCELLED
+  id          String           @id @default(cuid())
+  orderNumber String           @unique // e.g. "Q-101"
+  tableNumber String           // e.g. "Mesa 4 (Terraza)", "Barra 2"
+  tableId     String?
+  table       RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  pax         Int              @default(2) // número de comensales en mesa
+  status      String           @default("PENDING") // PENDING, PREPARING, SERVED, PAID, CANCELLED
   notes       String?
-  totalAmount Float       @default(0.0)
+  totalAmount Float            @default(0.0)
   staffUserId String?
-  staffUser   StaffUser?  @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
+  staffUser   StaffUser?       @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
   userId      String?
-  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   items       OrderItem[]
 
   @@index([status])
   @@index([createdAt])
   @@index([userId])
+  @@index([tableId])
 }
 
 model OrderItem {
