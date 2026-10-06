@@ -352,3 +352,65 @@ export async function generateAIScheduleAction(
   const workers = await getWorkersAction();
   return generateAISchedule(workers, demandConfig);
 }
+
+export interface WeekScheduleSummary {
+  id: string;
+  shiftsCount: number;
+  isPublished: boolean;
+  notes?: string | null;
+}
+
+/**
+ * Fetch a lightweight summary of all weekly schedules in a given year
+ * Used to render badges (Saved / X shifts vs Draft) in the right-side calendar menu.
+ */
+export async function getYearSchedulesSummaryAction(
+  year: number
+): Promise<{ success: boolean; summary: Record<string, WeekScheduleSummary>; error?: string }> {
+  try {
+    const startDate = new Date(Date.UTC(year - 1, 11, 15, 0, 0, 0, 0));
+    const endDate = new Date(Date.UTC(year + 1, 0, 15, 23, 59, 59, 999));
+
+    const schedules = await prisma.weeklySchedule.findMany({
+      where: {
+        weekStartDate: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        id: true,
+        weekStartDate: true,
+        isPublished: true,
+        notes: true,
+        _count: {
+          select: {
+            shifts: true,
+          },
+        },
+      },
+    });
+
+    const summary: Record<string, WeekScheduleSummary> = {};
+
+    for (const sched of schedules) {
+      // Format as YYYY-MM-DD
+      const y = sched.weekStartDate.getUTCFullYear();
+      const m = String(sched.weekStartDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(sched.weekStartDate.getUTCDate()).padStart(2, '0');
+      const key = `${y}-${m}-${d}`;
+
+      summary[key] = {
+        id: sched.id,
+        shiftsCount: sched._count.shifts,
+        isPublished: sched.isPublished,
+        notes: sched.notes,
+      };
+    }
+
+    return { success: true, summary };
+  } catch (err) {
+    console.error('Error fetching year schedules summary:', err);
+    return { success: false, summary: {}, error: 'Error al consultar resumen de cuadrantes.' };
+  }
+}
