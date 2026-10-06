@@ -510,7 +510,13 @@ export default function StaffClient({
         )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 md:pb-8">
+      <main
+        className={`flex-1 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full px-3 sm:px-6 lg:px-8 ${
+          activeTab === 'orders'
+            ? 'py-2 sm:py-3 pb-20 md:pb-4'
+            : 'py-4 sm:py-6 pb-28 md:pb-8'
+        }`}
+      >
         {activeTab === 'inventory' && (
           <div className="space-y-6">
             {/* Filter and Actions Bar */}
@@ -684,27 +690,27 @@ export default function StaffClient({
 
         {activeTab === 'orders' && (
           /* General Floor Plan & Orders Suite */
-          <div className="space-y-5">
+          <div className="space-y-3">
             {/* Top Toolbar */}
-            <div className="bg-white p-4 sm:p-5 rounded-3xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-4">
+            <div className="bg-white py-2.5 px-3.5 sm:px-5 rounded-2xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#2B2523] flex items-center gap-2">
+                <h3 className="font-serif text-lg sm:text-xl font-bold text-[#2B2523] flex items-center gap-2">
                   <span>Gestión de Sala, Mesas & Comandas</span>
-                  <span className="text-xs font-sans font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <span className="text-[11px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                     En Directo
                   </span>
                 </h3>
-                <p className="text-xs text-[#6E6259] mt-0.5">
+                <p className="text-[11px] sm:text-xs text-[#6E6259]">
                   Plano 2D del bar en Camas, asignación de pedidos en mesa con PDA y tablero kanban.
                 </p>
               </div>
 
               {/* View Switcher: Plano 2D vs Kanban */}
-              <div className="flex items-center gap-2 bg-[#FAF8F5] p-1.5 rounded-2xl border border-[#EADBC8]">
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 rounded-xl border border-[#EADBC8]">
                 <button
                   type="button"
                   onClick={() => setOrdersViewMode('floor')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                     ordersViewMode === 'floor'
                       ? 'bg-[#9E2A2B] text-white shadow-xs'
                       : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
@@ -717,7 +723,7 @@ export default function StaffClient({
                 <button
                   type="button"
                   onClick={() => setOrdersViewMode('kanban')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                     ordersViewMode === 'kanban'
                       ? 'bg-[#9E2A2B] text-white shadow-xs'
                       : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
@@ -730,10 +736,10 @@ export default function StaffClient({
                 <button
                   type="button"
                   onClick={loadTablesAndOrders}
-                  className="p-2 rounded-xl text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
                   title="Actualizar mesas y comandas"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

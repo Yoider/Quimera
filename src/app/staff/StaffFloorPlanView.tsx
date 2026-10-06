@@ -131,28 +131,28 @@ export default function StaffFloorPlanView({
   const totalRevenueInService = orders.reduce((acc, o) => acc + o.totalAmount, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       {/* Floor Plan Control Banner */}
-      <div className="bg-white p-4 rounded-3xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white py-2 px-3 sm:px-4 rounded-2xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-2.5">
         {/* Metrics Bar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span>{freeTables} Libres</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#9E2A2B]/10 border border-[#9E2A2B]/20 text-xs font-bold text-[#9E2A2B]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#9E2A2B] animate-pulse" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#9E2A2B]/10 border border-[#9E2A2B]/20 text-xs font-bold text-[#9E2A2B]">
+            <span className="w-2 h-2 rounded-full bg-[#9E2A2B] animate-pulse" />
             <span>{occupiedTables} Ocupadas</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-stone-100 text-xs font-semibold text-stone-700">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-100 text-xs font-semibold text-stone-700">
             <Users className="w-3.5 h-3.5 text-[#D4A373]" />
             <span>{totalPaxInService} personas en sala</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-50 text-xs font-bold text-amber-900 border border-amber-200">
-            <span>Servicio en curso:</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-xs font-bold text-amber-900 border border-amber-200">
+            <span>Servicio:</span>
             <span className="text-[#9E2A2B]">{totalRevenueInService.toFixed(2)}€</span>
           </div>
         </div>
@@ -162,9 +162,9 @@ export default function StaffFloorPlanView({
           {isDesignMode && (
             <button
               onClick={() => setIsNewTableModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-white border border-[#EADBC8] hover:bg-stone-50 text-[#2B2523] text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white border border-[#EADBC8] hover:bg-stone-50 text-[#2B2523] text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-[#9E2A2B]" />
+              <Plus className="w-3.5 h-3.5 text-[#9E2A2B]" />
               <span>Añadir Mesa</span>
             </button>
           )}
@@ -174,7 +174,7 @@ export default function StaffFloorPlanView({
               setIsDesignMode(!isDesignMode);
               setDraggingTableId(null);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
               isDesignMode
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 : 'bg-stone-100 hover:bg-stone-200 text-[#2B2523] border border-[#EADBC8]'
@@ -182,12 +182,12 @@ export default function StaffFloorPlanView({
           >
             {isDesignMode ? (
               <>
-                <Check className="w-4 h-4" />
+                <Check className="w-3.5 h-3.5" />
                 <span>Finalizar Edición</span>
               </>
             ) : (
               <>
-                <Edit3 className="w-4 h-4 text-[#9E2A2B]" />
+                <Edit3 className="w-3.5 h-3.5 text-[#9E2A2B]" />
                 <span>Modo Diseño / Mover</span>
               </>
             )}
@@ -196,7 +196,7 @@ export default function StaffFloorPlanView({
       </div>
 
       {isDesignMode && (
-        <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2 animate-in fade-in">
+        <div className="p-2.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2 animate-in fade-in">
           <Move className="w-4 h-4 text-[#9E2A2B] shrink-0" />
           <span>
             <strong>Modo Diseño Activo:</strong> Haz clic en el botón de mover (<Move className="w-3 h-3 inline text-[#9E2A2B]" />) de cualquier mesa y luego haz clic en la nueva posición del plano donde quieras colocarla.
@@ -207,7 +207,7 @@ export default function StaffFloorPlanView({
       {/* 2D Interactive Floor Canvas */}
       <div
         onClick={handleCanvasClick}
-        className="relative w-full h-[620px] lg:h-[700px] bg-[#FAF8F5] rounded-3xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
+        className="relative w-full h-[520px] lg:h-[calc(100vh-190px)] lg:min-h-[480px] lg:max-h-[630px] bg-[#FAF8F5] rounded-3xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
         style={{
           backgroundImage: 'radial-gradient(#D4A373 0.75px, transparent 0.75px)',
           backgroundSize: '24px 24px',
@@ -215,27 +215,27 @@ export default function StaffFloorPlanView({
       >
         {/* Zone Markers / Architecture Guides */}
         {/* Zone: BARRA (Top-Left) */}
-        <div className="absolute top-4 left-4 w-[48%] h-[38%] rounded-2xl border-2 border-dashed border-[#D4A373]/50 bg-amber-100/10 p-3 pointer-events-none flex flex-col justify-between">
+        <div className="absolute top-3 left-3 w-[48%] h-[38%] rounded-2xl border-2 border-dashed border-[#D4A373]/50 bg-amber-100/10 p-2.5 pointer-events-none flex flex-col justify-between">
           <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#D4A373]">
-            <Beer className="w-4 h-4" />
+            <Beer className="w-3.5 h-3.5" />
             <span>Zona 1: Barra de Tapeo & Bebidas</span>
           </div>
           <span className="text-[10px] text-stone-400">Mostrador & Taburetes</span>
         </div>
 
         {/* Zone: SALÓN COMEDOR (Bottom-Left) */}
-        <div className="absolute bottom-4 left-4 w-[48%] h-[52%] rounded-2xl border-2 border-dashed border-[#9E2A2B]/30 bg-rose-50/10 p-3 pointer-events-none flex flex-col justify-between">
+        <div className="absolute bottom-3 left-3 w-[48%] h-[54%] rounded-2xl border-2 border-dashed border-[#9E2A2B]/30 bg-rose-50/10 p-2.5 pointer-events-none flex flex-col justify-between">
           <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#9E2A2B]">
-            <UtensilsCrossed className="w-4 h-4" />
+            <UtensilsCrossed className="w-3.5 h-3.5" />
             <span>Zona 2: Salón Comedor Interior</span>
           </div>
           <span className="text-[10px] text-stone-400">Mesas Bajas & Comedor</span>
         </div>
 
         {/* Zone: TERRAZA (Right Column) */}
-        <div className="absolute top-4 right-4 w-[46%] h-[94%] rounded-2xl border-2 border-dashed border-[#2A9D8F]/40 bg-emerald-50/15 p-3 pointer-events-none flex flex-col justify-between">
+        <div className="absolute top-3 bottom-3 right-3 w-[46%] rounded-2xl border-2 border-dashed border-[#2A9D8F]/40 bg-emerald-50/15 p-2.5 pointer-events-none flex flex-col justify-between">
           <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#2A9D8F]">
-            <Sun className="w-4 h-4" />
+            <Sun className="w-3.5 h-3.5" />
             <span>Zona 3: Terraza & Veladores (Exterior)</span>
           </div>
           <span className="text-[10px] text-stone-400">Exterior Climatizado Camas</span>
@@ -251,13 +251,13 @@ export default function StaffFloorPlanView({
           const isBeingMoved = draggingTableId === table.id;
 
           // Shape styles
-          let shapeClasses = 'rounded-full w-20 h-20 sm:w-22 sm:h-22';
+          let shapeClasses = 'rounded-full w-18 h-18 sm:w-20 sm:h-20';
           if (table.shape === 'SQUARE') {
-            shapeClasses = 'rounded-2xl w-20 h-20 sm:w-22 sm:h-22';
+            shapeClasses = 'rounded-2xl w-18 h-18 sm:w-20 sm:h-20';
           } else if (table.shape === 'RECTANGLE') {
-            shapeClasses = 'rounded-2xl w-28 h-18 sm:w-32 sm:h-20';
+            shapeClasses = 'rounded-2xl w-24 h-15 sm:w-28 sm:h-17';
           } else if (table.shape === 'BAR_STOOL') {
-            shapeClasses = 'rounded-full w-14 h-14 sm:w-16 sm:h-16';
+            shapeClasses = 'rounded-full w-16 h-16 sm:w-18 sm:h-18';
           }
 
           // State colors
@@ -300,7 +300,7 @@ export default function StaffFloorPlanView({
                 className={`relative border-2 flex flex-col items-center justify-center p-1.5 shadow-md cursor-pointer transition-transform hover:scale-105 ${shapeClasses} ${statusBorder}`}
               >
                 {/* Table Name */}
-                <span className="font-serif font-bold text-xs sm:text-sm text-[#2B2523] truncate max-w-[90%] text-center leading-none">
+                <span className="font-serif font-bold text-xs sm:text-[13px] text-[#2B2523] px-1 text-center leading-tight whitespace-nowrap">
                   {table.name}
                 </span>
 
