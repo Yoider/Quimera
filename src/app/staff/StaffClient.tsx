@@ -1,10 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useTransition } from 'react';
+import React, { useState, useEffect, useMemo, useTransition } from 'react';
 import Link from 'next/link';
 import { Category, Product } from '@/types/menu';
 import { Worker } from '@/lib/schedule/types';
-import { updateProductAvailabilityAction, resetCatalogAction, deleteProductAction } from './actions';
+import {
+  updateProductAvailabilityAction,
+  updateBatchAvailabilityAction,
+  resetCatalogAction,
+  deleteProductAction,
+} from './actions';
+import { enrichProductWithTaxonomy } from '@/data/taxonomyMenu';
+import StaffProductTreeSidebar, { SelectedTreeNode } from './StaffProductTreeSidebar';
+import TaxonomyIcon from './TaxonomyIcon';
 import StaffWorkersView from './StaffWorkersView';
 import StaffScheduleView from './StaffScheduleView';
 import StaffProductModal from './StaffProductModal';
@@ -47,6 +55,11 @@ import {
   SlidersHorizontal,
   MapPin,
   LayoutGrid,
+  FolderOpen,
+  Tag,
+  Power,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface StaffClientProps {
@@ -108,10 +121,19 @@ export default function StaffClient({
   initialProducts,
   initialWorkers,
 }: StaffClientProps) {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>(() =>
+    initialProducts.map(enrichProductWithTaxonomy)
+  );
   const [workers, setWorkers] = useState<Worker[]>(initialWorkers);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTreeSidebarOpen, setIsTreeSidebarOpen] = useState(true);
+  const [isMobileTreeDrawerOpen, setIsMobileTreeDrawerOpen] = useState(false);
+  const [selectedTreeNode, setSelectedTreeNode] = useState<SelectedTreeNode>({
+    type: 'all',
+    label: 'Todas las Categorías',
+  });
+  const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'workers' | 'schedule' | 'datamodel' | 'stock'>('inventory');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
@@ -218,15 +240,16 @@ export default function StaffClient({
   };
 
   const handleProductSaved = (saved: Product) => {
+    const enriched = enrichProductWithTaxonomy(saved);
     setProducts((prev) => {
-      const exists = prev.some((p) => p.id === saved.id);
+      const exists = prev.some((p) => p.id === enriched.id);
       if (exists) {
-        return prev.map((p) => (p.id === saved.id ? saved : p));
+        return prev.map((p) => (p.id === enriched.id ? enriched : p));
       } else {
-        return [saved, ...prev];
+        return [enriched, ...prev];
       }
     });
-    showNotification(`Plato "${saved.name}" guardado correctamente.`);
+    showNotification(`Plato "${enriched.name}" guardado correctamente.`);
   };
 
   const handleDeleteProduct = (productId: string) => {
@@ -264,11 +287,30 @@ export default function StaffClient({
     });
   };
 
+  const handleBatchToggleAvailability = (productIds: string[], targetStatus: boolean) => {
+    if (productIds.length === 0) return;
+
+    setProducts((prev) =>
+      prev.map((p) => (productIds.includes(p.id) ? { ...p, isAvailable: targetStatus } : p))
+    );
+
+    startTransition(async () => {
+      const res = await updateBatchAvailabilityAction(productIds, targetStatus);
+      if (res.success) {
+        showNotification(
+          `Lote actualizado (${productIds.length} productos): ahora están ${
+            targetStatus ? 'DISPONIBLES' : 'AGOTADOS'
+          }.`
+        );
+      }
+    });
+  };
+
   const handleResetCatalog = () => {
     if (confirm('¿Restablecer todos los platos a disponibles por defecto?')) {
       startTransition(async () => {
         await resetCatalogAction();
-        setProducts(initialProducts.map((p) => ({ ...p, isAvailable: true })));
+        setProducts(initialProducts.map((p) => enrichProductWithTaxonomy({ ...p, isAvailable: true })));
         showNotification('Catálogo restablecido con éxito.');
       });
     }
@@ -285,17 +327,87 @@ export default function StaffClient({
     );
   };
 
-  // Filtered products for staff view
-  const filteredProducts = products.filter((p) => {
-    if (selectedCategory !== 'all' && p.categoryId !== selectedCategory) {
-      return false;
+  // Filtered products for staff view by search and IDE tree selection
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      // 1. Search Query
+      if (searchQuery.trim().length > 0) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = p.name.toLowerCase().includes(q);
+        const matchesFormat = p.format.toLowerCase().includes(q);
+        const matchesSubtype = (p.subtype || '').toLowerCase().includes(q);
+        const matchesTags = (p.tags || []).some((t) => t.toLowerCase().includes(q));
+        if (!matchesName && !matchesFormat && !matchesSubtype && !matchesTags) {
+          return false;
+        }
+      }
+
+      // 2. Tree Node Selection
+      if (selectedTreeNode.type === 'category') {
+        return p.categoryId === selectedTreeNode.categoryId;
+      }
+      if (selectedTreeNode.type === 'subtype') {
+        return (
+          p.categoryId === selectedTreeNode.categoryId &&
+          p.subtype === selectedTreeNode.subtypeName
+        );
+      }
+      if (selectedTreeNode.type === 'tag') {
+        return (
+          p.categoryId === selectedTreeNode.categoryId &&
+          p.subtype === selectedTreeNode.subtypeName &&
+          (p.tags || []).includes(selectedTreeNode.tag || '')
+        );
+      }
+      return true;
+    });
+  }, [products, searchQuery, selectedTreeNode]);
+
+  // Group filtered products by Category and Subtype
+  const groupedSubgroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        categoryId: string;
+        categoryName: string;
+        categoryIcon: string;
+        subtypeName: string;
+        products: Product[];
+        allTags: string[];
+      }
+    >();
+
+    for (const prod of filteredProducts) {
+      const cat = initialCategories.find((c) => c.id === prod.categoryId);
+      const catName = cat?.name || 'General';
+      const catIcon = cat?.icon || 'Utensils';
+      const subName = prod.subtype || 'General';
+      const groupKey = `${prod.categoryId}-${subName}`;
+
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          key: groupKey,
+          categoryId: prod.categoryId,
+          categoryName: catName,
+          categoryIcon: catIcon,
+          subtypeName: subName,
+          products: [],
+          allTags: [],
+        });
+      }
+
+      const group = map.get(groupKey)!;
+      group.products.push(prod);
+      for (const t of prod.tags || []) {
+        if (!group.allTags.includes(t)) {
+          group.allTags.push(t);
+        }
+      }
     }
-    if (searchQuery.trim().length > 0) {
-      const q = searchQuery.toLowerCase();
-      return p.name.toLowerCase().includes(q) || p.format.toLowerCase().includes(q);
-    }
-    return true;
-  });
+
+    return Array.from(map.values());
+  }, [filteredProducts, initialCategories]);
 
   const totalAvailable = products.filter((p) => p.isAvailable).length;
   const totalUnavailable = products.filter((p) => !p.isAvailable).length;
@@ -530,172 +642,451 @@ export default function StaffClient({
         }`}
       >
         {activeTab === 'inventory' && (
-          <div className="space-y-6">
-            {/* Filter and Actions Bar */}
-            <div className="bg-white p-4 rounded-xl border border-[#EADBC8] shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-              {/* Search */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-[#6E6259] absolute left-3 top-3" />
-                <input
-                  type="text"
-                  placeholder="Buscar producto por nombre o formato para cambiar estado..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 rounded-lg bg-[#FAF8F5] border border-[#EADBC8] text-sm text-[#2B2523] placeholder-[#6E6259]/70 focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20"
-                />
-              </div>
+          <div className="flex flex-col lg:flex-row gap-5 items-start">
+            {/* Center Area: Controls + Sectioned Subgroups */}
+            <div className="flex-1 min-w-0 w-full space-y-4">
+              {/* Filter and Actions Bar */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EADBC8] shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-[#6E6259] absolute left-3 top-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Buscar producto, subtipo o etiqueta (#Barril, #Zero, etc.)..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 rounded-xl bg-[#FAF8F5] border border-[#EADBC8] text-xs sm:text-sm text-[#2B2523] placeholder-[#6E6259]/70 focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20 font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setIsCreateProductModalOpen(true)}
-                  className="px-3.5 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#832223] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Añadir Plato</span>
-                </button>
-
-                <button
-                  onClick={handleResetCatalog}
-                  disabled={isPending}
-                  className="px-3.5 py-2 rounded-xl border border-[#EADBC8] text-xs font-semibold text-[#6E6259] hover:bg-stone-50 hover:text-[#2B2523] transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Restablecer todo</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Category Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-              <button
-                onClick={() => setSelectedCategory('all')}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                  selectedCategory === 'all'
-                    ? 'bg-[#9E2A2B] text-white'
-                    : 'bg-white border border-[#EADBC8] text-[#2B2523] hover:border-[#D4A373]'
-                }`}
-              >
-                Todas las categorías ({products.length})
-              </button>
-              {initialCategories.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedCategory(c.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                    selectedCategory === c.id
-                      ? 'bg-[#9E2A2B] text-white'
-                      : 'bg-white border border-[#EADBC8] text-[#2B2523] hover:border-[#D4A373]'
-                  }`}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Product Toggle & Edit Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredProducts.map((product) => {
-                const category = initialCategories.find((c) => c.id === product.categoryId);
-
-                return (
-                  <div
-                    key={product.id}
-                    className={`p-4 rounded-2xl border transition-all bg-white flex flex-col justify-between gap-3 shadow-2xs ${
-                      product.isAvailable
-                        ? 'border-[#EADBC8] hover:border-[#D4A373]'
-                        : 'border-red-200 bg-red-50/20'
+                {/* Actions */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Toggle IDE Sidebar on Mobile/Desktop */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setIsMobileTreeDrawerOpen((prev) => !prev);
+                      } else {
+                        setIsTreeSidebarOpen((prev) => !prev);
+                      }
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      isTreeSidebarOpen
+                        ? 'bg-[#2B2523] text-[#D4A373] border-[#2B2523] shadow-xs'
+                        : 'bg-white text-[#2B2523] border-[#EADBC8] hover:border-[#D4A373]'
                     }`}
                   >
-                    <div className="space-y-2.5">
-                      <div className="flex items-start gap-3">
-                        {/* Thumbnail image with fallback */}
-                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-stone-100 border border-stone-200 shrink-0 relative shadow-2xs">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src =
-                                'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
-                            }}
-                          />
-                        </div>
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Explorador IDE</span>
+                    <span className="sm:hidden">Árbol IDE</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 font-mono">
+                      {selectedTreeNode.type === 'all'
+                        ? 'Todo'
+                        : selectedTreeNode.label.split('>').pop()?.trim()}
+                    </span>
+                  </button>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E6259] truncate block">
-                              {category?.name || 'General'} · <strong className="text-[#9E2A2B]">{product.format}</strong>
-                            </span>
-                            <span className="font-sans font-bold text-[#9E2A2B] text-sm shrink-0">
-                              {product.price.toFixed(2)}€
-                            </span>
+                  <button
+                    onClick={() => setIsCreateProductModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-[#9E2A2B] hover:bg-[#832223] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Añadir Plato</span>
+                  </button>
+
+                  <button
+                    onClick={handleResetCatalog}
+                    disabled={isPending}
+                    className="px-3.5 py-2 rounded-xl border border-[#EADBC8] text-xs font-semibold text-[#6E6259] hover:bg-stone-50 hover:text-[#2B2523] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Restablecer</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Filter Pill / Breadcrumb when a folder or tag is selected in IDE tree */}
+              {selectedTreeNode.type !== 'all' && (
+                <div className="bg-[#FAF8F5] px-3.5 py-2 rounded-xl border border-[#EADBC8] flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-stone-500 font-medium">Filtrando por:</span>
+                    <span className="font-bold text-[#9E2A2B] flex items-center gap-1 truncate">
+                      <TaxonomyIcon name={selectedTreeNode.label} className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{selectedTreeNode.label}</span>
+                    </span>
+                    <span className="text-stone-400 font-mono text-[11px]">
+                      ({filteredProducts.length} productos)
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedTreeNode({
+                        type: 'all',
+                        label: 'Todas las Categorías',
+                      })
+                    }
+                    className="text-[11px] font-bold text-[#9E2A2B] hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <span>Mostrar todo</span>
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
+              {/* SECTIONED ACCORDIONS & SUBGROUPS IN THE CENTER */}
+              {groupedSubgroups.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-[#EADBC8] space-y-2">
+                  <Layers className="w-8 h-8 text-stone-300 mx-auto" />
+                  <p className="text-sm font-semibold text-stone-700">
+                    No se encontraron productos en este subgrupo o con este filtro.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedTreeNode({ type: 'all', label: 'Todas las Categorías' });
+                    }}
+                    className="text-xs font-bold text-[#9E2A2B] hover:underline cursor-pointer"
+                  >
+                    Restablecer filtros y ver todo el catálogo
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {groupedSubgroups.map((group) => {
+                    const isCollapsed = collapsedSubgroups[group.key] ?? false;
+                    const groupProductIds = group.products.map((p) => p.id);
+                    const availableInGroup = group.products.filter((p) => p.isAvailable).length;
+                    const isGroupAllAvailable =
+                      availableInGroup === group.products.length && group.products.length > 0;
+                    const isGroupAllUnavailable =
+                      availableInGroup === 0 && group.products.length > 0;
+
+                    return (
+                      <div
+                        key={group.key}
+                        className="bg-white rounded-2xl border border-[#EADBC8] shadow-xs overflow-hidden transition-all"
+                      >
+                        {/* Subgroup Header Banner with Batch Control */}
+                        <div className="p-3 sm:p-3.5 bg-[#FAF8F5] border-b border-[#EADBC8] flex items-center justify-between gap-3">
+                          <div
+                            className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                            onClick={() =>
+                              setCollapsedSubgroups((prev) => ({
+                                ...prev,
+                                [group.key]: !isCollapsed,
+                              }))
+                            }
+                          >
+                            <button
+                              type="button"
+                              className="p-1 rounded text-stone-400 hover:text-stone-700 transition-colors"
+                            >
+                              {isCollapsed ? (
+                                <ChevronRight className="w-4 h-4" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
+
+                            <div className="w-7 h-7 rounded-lg bg-[#2B2523] flex items-center justify-center shrink-0 shadow-2xs">
+                              <TaxonomyIcon
+                                name={group.subtypeName}
+                                categoryId={group.categoryId}
+                                className="w-4 h-4 shrink-0"
+                              />
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-[#9E2A2B] bg-[#9E2A2B]/10 px-2 py-0.5 rounded-md">
+                                  {group.categoryName}
+                                </span>
+                                <h4 className="font-serif font-bold text-sm text-[#2B2523] truncate">
+                                  {group.subtypeName}
+                                </h4>
+                              </div>
+                              <span className="text-[10.5px] text-stone-500 block mt-0.5">
+                                {group.products.length} productos en este subgrupo ·{' '}
+                                <strong
+                                  className={
+                                    isGroupAllUnavailable
+                                      ? 'text-rose-600'
+                                      : 'text-emerald-700'
+                                  }
+                                >
+                                  {availableInGroup} disponibles
+                                </strong>
+                              </span>
+                            </div>
                           </div>
 
-                          <h4 className="font-serif font-bold text-base text-[#2B2523] leading-snug line-clamp-1">
-                            {product.name}
-                          </h4>
-
-                          {product.badge && (
-                            <span className="inline-block mt-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                              {product.badge}
-                            </span>
-                          )}
+                          {/* Batch Availability Toggle for Subgroup */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() =>
+                                handleBatchToggleAvailability(
+                                  groupProductIds,
+                                  !isGroupAllAvailable
+                                )
+                              }
+                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                                isGroupAllAvailable
+                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              }`}
+                              title={
+                                isGroupAllAvailable
+                                  ? `Agotar/pausar todos los ${group.products.length} productos de este subgrupo`
+                                  : `Activar todos los ${group.products.length} productos de este subgrupo`
+                              }
+                            >
+                              <Power className="w-3 h-3" />
+                              <span className="hidden sm:inline">
+                                {isGroupAllAvailable ? 'Pausar Lote' : 'Activar Lote'}
+                              </span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
-                      <p className="text-xs text-[#6E6259] line-clamp-2">
-                        {product.description}
-                      </p>
-                    </div>
+                        {/* Collapsible Subgroup Body */}
+                        {!isCollapsed && (
+                          <div className="p-3.5 sm:p-4 space-y-3">
+                            {/* Tags Chips Bar */}
+                            {group.allTags.length > 0 && (
+                              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                                <span className="text-[10px] uppercase font-bold text-stone-400 shrink-0">
+                                  Etiquetas:
+                                </span>
+                                {group.allTags.map((tag) => {
+                                  const isSelectedTag =
+                                    selectedTreeNode.type === 'tag' &&
+                                    selectedTreeNode.tag === tag &&
+                                    selectedTreeNode.subtypeName === group.subtypeName;
 
-                    {/* Touch Friendly Action Buttons */}
-                    <div className="pt-2 border-t border-[#EADBC8]/70 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => handleToggleAvailability(product.id, product.isAvailable)}
-                        disabled={isPending}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer ${
-                          product.isAvailable
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                            : 'bg-red-600 hover:bg-red-700 text-white'
-                        }`}
-                        title={product.isAvailable ? 'Marcar como agotado' : 'Marcar como disponible'}
-                      >
-                        {product.isAvailable ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Disponible</span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Agotado</span>
-                          </>
+                                  return (
+                                    <button
+                                      key={tag}
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedTreeNode(
+                                          isSelectedTag
+                                            ? {
+                                                type: 'subtype',
+                                                categoryId: group.categoryId,
+                                                subtypeName: group.subtypeName,
+                                                label: `${group.categoryName} > ${group.subtypeName}`,
+                                              }
+                                            : {
+                                                type: 'tag',
+                                                categoryId: group.categoryId,
+                                                subtypeName: group.subtypeName,
+                                                tag,
+                                                label: `${group.subtypeName} > #${tag}`,
+                                              }
+                                        )
+                                      }
+                                      className={`px-2 py-0.5 rounded-md text-[10.5px] font-medium transition-colors cursor-pointer flex items-center gap-1 border shrink-0 ${
+                                        isSelectedTag
+                                          ? 'bg-[#9E2A2B] text-white border-[#9E2A2B]'
+                                          : 'bg-stone-50 text-stone-600 border-stone-200 hover:border-[#D4A373]'
+                                      }`}
+                                    >
+                                      <TaxonomyIcon
+                                        name={tag}
+                                        categoryId={group.categoryId}
+                                        className="w-3 h-3 shrink-0"
+                                      />
+                                      <span>#{tag}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Cards Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {group.products.map((product) => {
+                                return (
+                                  <div
+                                    key={product.id}
+                                    className={`p-3.5 rounded-2xl border transition-all bg-white flex flex-col justify-between gap-3 shadow-2xs ${
+                                      product.isAvailable
+                                        ? 'border-[#EADBC8] hover:border-[#D4A373]'
+                                        : 'border-red-200 bg-red-50/20'
+                                    }`}
+                                  >
+                                    <div className="space-y-2">
+                                      <div className="flex items-start gap-2.5">
+                                        {/* Thumbnail image with fallback */}
+                                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-stone-100 border border-stone-200 shrink-0 relative shadow-2xs">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={product.imageUrl}
+                                            alt={product.name}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                              (e.currentTarget as HTMLImageElement).src =
+                                                'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80';
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-start justify-between gap-1.5">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E6259] truncate block">
+                                              <strong className="text-[#9E2A2B]">{product.format}</strong>
+                                            </span>
+                                            <span className="font-sans font-bold text-[#9E2A2B] text-sm shrink-0">
+                                              {product.price.toFixed(2)}€
+                                            </span>
+                                          </div>
+
+                                          <h4 className="font-serif font-bold text-sm text-[#2B2523] leading-snug line-clamp-1 mt-0.5">
+                                            {product.name}
+                                          </h4>
+
+                                          {/* Subtype and Tags Badges */}
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {product.tags?.slice(0, 3).map((t) => (
+                                              <span
+                                                key={t}
+                                                className="text-[9px] px-1.5 py-0.5 rounded bg-amber-50/80 text-stone-800 border border-amber-200/80 font-medium flex items-center gap-1"
+                                              >
+                                                <TaxonomyIcon
+                                                  name={t}
+                                                  categoryId={product.categoryId}
+                                                  className="w-2.5 h-2.5 shrink-0"
+                                                />
+                                                <span>#{t}</span>
+                                              </span>
+                                            ))}
+                                            {product.badge && (
+                                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-[#9E2A2B]/10 text-[#9E2A2B] border border-[#9E2A2B]/20">
+                                                {product.badge}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <p className="text-[11px] text-[#6E6259] line-clamp-2">
+                                        {product.description}
+                                      </p>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="pt-2 border-t border-[#EADBC8]/70 flex items-center justify-between gap-2">
+                                      <button
+                                        onClick={() =>
+                                          handleToggleAvailability(
+                                            product.id,
+                                            product.isAvailable
+                                          )
+                                        }
+                                        disabled={isPending}
+                                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer ${
+                                          product.isAvailable
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                            : 'bg-red-600 hover:bg-red-700 text-white'
+                                        }`}
+                                        title={
+                                          product.isAvailable
+                                            ? 'Marcar como agotado'
+                                            : 'Marcar como disponible'
+                                        }
+                                      >
+                                        {product.isAvailable ? (
+                                          <>
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            <span>Disponible</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <XCircle className="w-3.5 h-3.5" />
+                                            <span>Agotado</span>
+                                          </>
+                                        )}
+                                      </button>
+
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => setEditingProduct(product)}
+                                          className="p-1.5 rounded-lg border border-[#EADBC8] hover:border-[#9E2A2B] text-[#9E2A2B] hover:bg-[#9E2A2B]/10 text-xs font-semibold transition-colors cursor-pointer"
+                                          title="Modificar foto, descripción, precio o subtipo"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        <button
+                                          onClick={() => setProductToDelete(product)}
+                                          className="p-1.5 rounded-lg border border-stone-200 hover:border-rose-400 text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs transition-colors cursor-pointer"
+                                          title="Eliminar plato de la carta"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         )}
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setEditingProduct(product)}
-                          className="p-1.5 rounded-lg border border-[#EADBC8] hover:border-[#9E2A2B] text-[#9E2A2B] hover:bg-[#9E2A2B]/10 text-xs font-semibold transition-colors cursor-pointer"
-                          title="Modificar foto, descripción, precio o formato"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          onClick={() => setProductToDelete(product)}
-                          className="p-1.5 rounded-lg border border-stone-200 hover:border-rose-400 text-stone-400 hover:text-rose-600 hover:bg-rose-50 text-xs transition-colors cursor-pointer"
-                          title="Eliminar plato de la carta"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Desktop Right Sidebar: IDE Folder Explorer */}
+            {isTreeSidebarOpen && (
+              <div className="hidden lg:block shrink-0 sticky top-20 max-h-[calc(100vh-100px)] rounded-2xl overflow-hidden border border-[#EADBC8] shadow-sm">
+                <StaffProductTreeSidebar
+                  products={products}
+                  categories={initialCategories}
+                  selectedNode={selectedTreeNode}
+                  onSelectNode={(node) => setSelectedTreeNode(node)}
+                  onBatchToggleAvailability={handleBatchToggleAvailability}
+                  isPending={isPending}
+                  onClose={() => setIsTreeSidebarOpen(false)}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Mobile Slide-over Drawer for IDE Explorer */}
+        {isMobileTreeDrawerOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in">
+            <div className="w-80 max-w-[85vw] h-full bg-white shadow-2xl animate-in slide-in-from-right">
+              <StaffProductTreeSidebar
+                products={products}
+                categories={initialCategories}
+                selectedNode={selectedTreeNode}
+                onSelectNode={(node) => {
+                  setSelectedTreeNode(node);
+                  setIsMobileTreeDrawerOpen(false);
+                }}
+                onBatchToggleAvailability={handleBatchToggleAvailability}
+                isPending={isPending}
+                onClose={() => setIsMobileTreeDrawerOpen(false)}
+              />
             </div>
           </div>
         )}

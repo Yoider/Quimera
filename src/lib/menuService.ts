@@ -139,6 +139,22 @@ export async function toggleProductAvailability(id: string, isAvailable: boolean
 }
 
 /**
+ * Toggle availability for multiple products in batch (subtypes/folders)
+ */
+export async function toggleBatchProductAvailability(ids: string[], isAvailable: boolean): Promise<boolean> {
+  try {
+    await prisma.product.updateMany({
+      where: { id: { in: ids } },
+      data: { isAvailable },
+    });
+    return true;
+  } catch (err) {
+    console.error('❌ Error al actualizar disponibilidad por lote en PostgreSQL:', err);
+    return false;
+  }
+}
+
+/**
  * Reset all products availability to true
  */
 export async function resetCatalog(): Promise<void> {

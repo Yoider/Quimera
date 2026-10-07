@@ -72,6 +72,8 @@ export default function StaffProductModal({
   const [badge, setBadge] = useState('');
   const [isAvailable, setIsAvailable] = useState(true);
   const [selectedAllergens, setSelectedAllergens] = useState<AllergenType[]>([]);
+  const [subtype, setSubtype] = useState('');
+  const [tagsStr, setTagsStr] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Camera & Image Upload States
@@ -105,6 +107,8 @@ export default function StaffProductModal({
         setBadge(product.badge || '');
         setIsAvailable(product.isAvailable);
         setSelectedAllergens(product.allergens || []);
+        setSubtype(product.subtype || '');
+        setTagsStr((product.tags || []).join(', '));
       } else {
         setName('');
         setDescription('');
@@ -116,6 +120,8 @@ export default function StaffProductModal({
         setBadge('');
         setIsAvailable(true);
         setSelectedAllergens([]);
+        setSubtype('');
+        setTagsStr('');
       }
     } else {
       stopCameraStream();
@@ -287,6 +293,11 @@ export default function StaffProductModal({
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const tagsList = tagsStr
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
     startTransition(async () => {
       stopCameraStream();
       if (mode === 'edit' && product) {
@@ -304,7 +315,11 @@ export default function StaffProductModal({
         });
 
         if (res.success && res.product) {
-          onSave(res.product);
+          onSave({
+            ...res.product,
+            subtype: subtype.trim() || undefined,
+            tags: tagsList.length > 0 ? tagsList : undefined,
+          });
           handleClose();
         } else {
           setErrorMsg('Error al guardar los cambios del producto.');
@@ -324,7 +339,11 @@ export default function StaffProductModal({
         });
 
         if (res.success && res.product) {
-          onSave(res.product);
+          onSave({
+            ...res.product,
+            subtype: subtype.trim() || undefined,
+            tags: tagsList.length > 0 ? tagsList : undefined,
+          });
           handleClose();
         } else {
           setErrorMsg('Error al crear el nuevo plato.');
@@ -627,7 +646,44 @@ export default function StaffProductModal({
             </div>
           </div>
 
-          {/* Row 4: Description */}
+          {/* Row 4: Subtype (Folder) and Tags */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-[#FAF8F5] rounded-xl border border-[#EADBC8]">
+            <div>
+              <label className="block text-xs font-bold text-[#2B2523] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-amber-600" />
+                <span>Subtipo / Carpeta IDE</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ej. Cervezas, Vinos Tintos, Molletes Quimera..."
+                value={subtype}
+                onChange={(e) => setSubtype(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-[#EADBC8] text-xs font-semibold text-[#2B2523] focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20"
+              />
+              <span className="text-[10px] text-stone-500 mt-1 block">
+                Agrupa el plato en una carpeta dentro del explorador IDE.
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#2B2523] uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-[#9E2A2B]" />
+                <span>Etiquetas (separadas por coma)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ej. Barril, Con Alcohol, Zero, Sin Gluten..."
+                value={tagsStr}
+                onChange={(e) => setTagsStr(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-[#EADBC8] text-xs font-semibold text-[#2B2523] focus:outline-none focus:ring-2 focus:ring-[#9E2A2B]/20"
+              />
+              <span className="text-[10px] text-stone-500 mt-1 block">
+                Sub-etiquetas para filtrado rápido y pausado en lote.
+              </span>
+            </div>
+          </div>
+
+          {/* Row 5: Description */}
           <div>
             <label className="block text-xs font-bold text-[#2B2523] uppercase tracking-wider mb-1">
               Descripción del Plato

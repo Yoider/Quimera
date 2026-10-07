@@ -2,6 +2,7 @@
 
 import {
   toggleProductAvailability,
+  toggleBatchProductAvailability,
   resetCatalog,
   getProducts,
   updateProduct,
@@ -17,6 +18,13 @@ export async function updateProductAvailabilityAction(id: string, isAvailable: b
   revalidatePath('/');
   revalidatePath('/staff');
   return { success: !!updated, product: updated };
+}
+
+export async function updateBatchAvailabilityAction(ids: string[], isAvailable: boolean) {
+  const success = await toggleBatchProductAvailability(ids, isAvailable);
+  revalidatePath('/');
+  revalidatePath('/staff');
+  return { success };
 }
 
 export async function updateProductAction(id: string, data: UpdateProductInput) {

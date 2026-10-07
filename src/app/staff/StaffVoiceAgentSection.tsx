@@ -13,9 +13,35 @@ import {
   CheckCircle2,
   AlertCircle,
   Volume2,
+  Beer,
+  ChefHat,
+  Check,
+  X,
+  Loader2,
+  MapPin,
+  UtensilsCrossed,
 } from 'lucide-react';
-import { RestaurantTableData } from './orderActions';
+import {
+  RestaurantTableData,
+  createOrUpdateTableOrderAction,
+  openTableServiceAction,
+  saveRestaurantTableAction,
+} from './orderActions';
 import { ProductItem } from './StaffWaiterPdaModal';
+import {
+  parseVoiceOrder,
+  ParsedVoiceItem,
+  STATIONS,
+  DestinationStation,
+} from './voiceOrderAgent';
+
+export interface OrderCardData {
+  tableNumber: string;
+  pax: number;
+  items: ParsedVoiceItem[];
+  totalAmount: number;
+  status: 'pending_confirmation' | 'confirmed' | 'cancelled';
+}
 
 export interface ChatMessage {
   id: string;
@@ -24,6 +50,7 @@ export interface ChatMessage {
   timestamp: string;
   isVoice?: boolean;
   rawCommand?: string;
+  orderCard?: OrderCardData;
 }
 
 interface StaffVoiceAgentSectionProps {
@@ -39,7 +66,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: 'msg-welcome',
     sender: 'assistant',
-    text: '¡Hola! Soy el Agente IA de Taberna Quimera 🍷.\n\nPuedes dictar o escribir comandas para las mesas (ej: "Mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo"), consultar el estado de la sala o pedir asistencia.',
+    text: '¡Hola! Soy el Agente IA de Taberna Quimera 🍷.\n\nPuedes dictar o escribir comandas para las mesas (ej: "Mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo" o "Mesa 2, 2 dobles cruzcampo y 1 jamón ibérico"). Te mostraré la tarjeta interactiva para que puedas confirmarla antes de marcharla a cocina y barra.',
     timestamp: 'Ahora',
   },
 ];
@@ -66,6 +93,7 @@ export default function StaffVoiceAgentSection({
   const [isListening, setIsListening] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
   const [isBotTyping, setIsBotTyping] = useState(false);
+  const [confirmingMessageId, setConfirmingMessageId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,32 +187,61 @@ export default function StaffVoiceAgentSection({
     }
   };
 
-  // Generate bot response
-  const generateBotResponse = (userPrompt: string): string => {
+  // Generate bot response and order card
+  const processUserPrompt = (
+    userPrompt: string
+  ): { text: string; orderCard?: OrderCardData } => {
     const norm = userPrompt.toLowerCase().trim();
 
-    // Check for table order command pattern (e.g., "mesa 110, 4 cortadas...")
-    const isOrderPattern =
-      /\b(?:mesa|barra|terraza)\b/i.test(norm) ||
-      /\b(?:cortada|cortadas|caña|cañas|mollete|molletes|payoyo|queso|doble|tercio|jamon|jamón|gilda)\b/i.test(norm);
+    // Parse items using NLP parser
+    const parsed = parseVoiceOrder(
+      userPrompt,
+      products,
+      tables.map((t) => ({ tableNumber: t.tableNumber, name: t.name }))
+    );
 
-    if (isOrderPattern) {
-      return `🤖 Comando de texto recibido por la IA:\n«${userPrompt.trim()}»\n\n✓ Registrado correctamente en el sistema.`;
+    // If valid items detected, build interactive order card
+    if (parsed.items.length > 0) {
+      const targetTable =
+        parsed.detectedTableNumber ||
+        (selectedTable ? selectedTable.tableNumber : 'Mesa 1');
+
+      const matchedTableObj = tables.find((t) => t.tableNumber === targetTable);
+      const pax = matchedTableObj?.seats || 2;
+
+      const orderCard: OrderCardData = {
+        tableNumber: targetTable,
+        pax,
+        items: parsed.items,
+        totalAmount: parsed.totalAmount,
+        status: 'pending_confirmation',
+      };
+
+      return {
+        text: `🤖 Comando de texto recibido por la IA:\n«${userPrompt.trim()}»\n\nHe interpretado la comanda para ${targetTable}. Revisa el desglose y confirma para marchar a cocina y barra:`,
+        orderCard,
+      };
     }
 
     // Check for queries about tables
     if (/\b(?:libres|disponibles|mesas libres)\b/i.test(norm)) {
       const freeTables = tables.length;
-      return `📊 Consulta de sala:\nActualmente hay ${freeTables} mesas registradas en el plano del bar. Puedes indicar un pedido diciendo por ejemplo: "Mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo".`;
+      return {
+        text: `📊 Consulta de sala:\nActualmente hay ${freeTables} mesas registradas en el plano del bar. Puedes indicar un pedido diciendo por ejemplo: "Mesa 2, 2 dobles cruzcampo y 1 jamón ibérico".`,
+      };
     }
 
     // Greetings
     if (/\b(?:hola|buenas|buenos dias|buenas tardes)\b/i.test(norm)) {
-      return `¡Hola! Listo para tomar comandas. Dicta o escribe tu comanda indicando la mesa y los artículos (ej: "Mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo").`;
+      return {
+        text: `¡Hola! Listo para tomar comandas. Dicta o escribe tu comanda indicando la mesa y los artículos (ej: "Mesa 2, 2 dobles cruzcampo y 1 jamón ibérico" o "Mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo").`,
+      };
     }
 
-    // Default response: echoing the command received by the AI
-    return `🤖 Comando de texto recibido por la IA:\n«${userPrompt.trim()}»\n\n✓ Registrado para procesamiento.`;
+    // Default fallback
+    return {
+      text: `🤖 Comando de texto recibido por la IA:\n«${userPrompt.trim()}»\n\n✓ Registrado correctamente en el sistema.`,
+    };
   };
 
   // Send message
@@ -216,18 +273,125 @@ export default function StaffVoiceAgentSection({
 
     // 2. Bot reply after slight delay for realism
     setTimeout(() => {
-      const replyText = generateBotResponse(text);
+      const { text: replyText, orderCard } = processUserPrompt(text);
       const botMessage: ChatMessage = {
         id: `msg-bot-${Date.now()}`,
         sender: 'assistant',
         text: replyText,
         timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
         rawCommand: text,
+        orderCard,
       };
 
       setMessages((prev) => [...prev, botMessage]);
       setIsBotTyping(false);
-    }, 400);
+    }, 350);
+  };
+
+  // Confirm order from chat card and dispatch to database & floor plan
+  const handleConfirmOrder = async (messageId: string, orderCard: OrderCardData) => {
+    setConfirmingMessageId(messageId);
+    try {
+      const targetTableNumber = orderCard.tableNumber.trim();
+
+      // 1. Ensure table exists in database or create dynamic table if it's e.g. "Mesa 110"
+      let existingTable = tables.find(
+        (t) =>
+          t.tableNumber.toLowerCase() === targetTableNumber.toLowerCase() ||
+          t.name.toLowerCase() === targetTableNumber.toLowerCase()
+      );
+
+      if (!existingTable) {
+        const resTable = await saveRestaurantTableAction({
+          tableNumber: targetTableNumber,
+          name: targetTableNumber,
+          zone: 'SALON',
+          seats: orderCard.pax || 4,
+          shape: 'ROUND',
+          posX: 50,
+          posY: 50,
+          color: '#9E2A2B',
+        });
+        if (resTable.success && resTable.table) {
+          existingTable = resTable.table;
+        }
+      }
+
+      // 2. Open table service
+      await openTableServiceAction({
+        tableNumber: targetTableNumber,
+        pax: orderCard.pax || 2,
+      });
+
+      // 3. Create or append active order in database
+      const resOrder = await createOrUpdateTableOrderAction({
+        tableNumber: targetTableNumber,
+        tableId: existingTable?.id,
+        pax: orderCard.pax || 2,
+        items: orderCard.items.map((it) => ({
+          productId: it.productId,
+          quantity: it.quantity,
+          notes: it.notes || undefined,
+        })),
+        generalNotes: 'Comanda tramitada vía Agente IA Chatbot',
+      });
+
+      if (resOrder.success) {
+        // Update message state in chat
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id === messageId && m.orderCard) {
+              return {
+                ...m,
+                orderCard: {
+                  ...m.orderCard,
+                  status: 'confirmed',
+                },
+              };
+            }
+            return m;
+          })
+        );
+
+        // Append bot confirmation message
+        const confirmationBotMsg: ChatMessage = {
+          id: `msg-bot-confirmed-${Date.now()}`,
+          sender: 'assistant',
+          text: `🎉 ¡Comanda confirmada y marchada con éxito a ${orderCard.tableNumber}!\n\n• Importe: ${orderCard.totalAmount.toFixed(2)}€\n• Partidas notificadas: Barra, Chacinas y Cocina.\n• La mesa ya figura como Ocupada en el plano 2D.`,
+          timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, confirmationBotMsg]);
+
+        // Revalidate floor plan data and counts
+        onOrderSaved?.();
+        onRefreshData?.();
+      } else {
+        alert(resOrder.error || 'Error al marchar comanda.');
+      }
+    } catch (err: any) {
+      console.error('Error confirming order:', err);
+      alert(err.message || 'Error al marchar comanda.');
+    } finally {
+      setConfirmingMessageId(null);
+    }
+  };
+
+  // Cancel / Dismiss order card
+  const handleCancelOrder = (messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === messageId && m.orderCard) {
+          return {
+            ...m,
+            orderCard: {
+              ...m.orderCard,
+              status: 'cancelled',
+            },
+          };
+        }
+        return m;
+      })
+    );
   };
 
   // Quick preset click
@@ -272,7 +436,7 @@ export default function StaffVoiceAgentSection({
           <button
             type="button"
             onClick={handleClearHistory}
-            className="p-1 rounded-md text-stone-300 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1 rounded-md text-stone-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
             title="Vaciar conversación"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -284,6 +448,7 @@ export default function StaffVoiceAgentSection({
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 custom-scrollbar text-xs">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
+          const card = msg.orderCard;
 
           return (
             <div
@@ -299,9 +464,9 @@ export default function StaffVoiceAgentSection({
                 </div>
               )}
 
-              {/* Message Bubble */}
+              {/* Message Bubble Container */}
               <div
-                className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-2xs space-y-1 ${
+                className={`max-w-[88%] rounded-2xl px-3 py-2.5 shadow-2xs space-y-2 ${
                   isUser
                     ? 'bg-[#9E2A2B] text-white rounded-tr-xs'
                     : 'bg-white text-stone-800 border border-[#EADBC8] rounded-tl-xs'
@@ -319,6 +484,106 @@ export default function StaffVoiceAgentSection({
                 <p className="whitespace-pre-wrap leading-relaxed text-[11.5px] font-sans">
                   {msg.text}
                 </p>
+
+                {/* ================= INTERACTIVE ORDER CARD (OPTION B) ================= */}
+                {card && (
+                  <div className="mt-2 p-2.5 bg-[#FAF8F5] rounded-xl border border-[#EADBC8] space-y-2 text-stone-800 shadow-2xs">
+                    {/* Card Header */}
+                    <div className="flex items-center justify-between pb-1.5 border-b border-stone-200/80">
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <MapPin className="w-3.5 h-3.5 text-[#9E2A2B]" />
+                        <span className="text-[#9E2A2B]">{card.tableNumber}</span>
+                        <span className="text-[10px] text-stone-500 font-normal">
+                          ({card.pax} pax)
+                        </span>
+                      </div>
+
+                      {/* Card Status Badge */}
+                      {card.status === 'confirmed' ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <Check className="w-2.5 h-2.5" />
+                          <span>Marchada</span>
+                        </span>
+                      ) : card.status === 'cancelled' ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-stone-200 text-stone-600">
+                          Descartada
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          Pendiente
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Items List */}
+                    <div className="space-y-1">
+                      {card.items.map((it) => (
+                        <div
+                          key={it.id}
+                          className="flex items-center justify-between text-[11px] py-0.5"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                            {it.station === 'BEBIDAS' ? (
+                              <Beer className="w-3 h-3 text-amber-600 shrink-0" />
+                            ) : it.station === 'CHACINAS' ? (
+                              <ChefHat className="w-3 h-3 text-rose-600 shrink-0" />
+                            ) : (
+                              <UtensilsCrossed className="w-3 h-3 text-emerald-600 shrink-0" />
+                            )}
+                            <span className="font-semibold text-stone-700 truncate">
+                              <strong>{it.quantity}x</strong> {it.productName}
+                            </span>
+                          </div>
+                          <span className="font-bold text-stone-800 shrink-0">
+                            {it.totalPrice.toFixed(2)}€
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Total Row */}
+                    <div className="flex items-center justify-between pt-1.5 border-t border-stone-200 text-xs font-bold">
+                      <span className="text-stone-600">Total Comanda:</span>
+                      <span className="text-[#9E2A2B] text-sm">
+                        {card.totalAmount.toFixed(2)}€
+                      </span>
+                    </div>
+
+                    {/* Action Buttons if Pending */}
+                    {card.status === 'pending_confirmation' && (
+                      <div className="pt-1 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmOrder(msg.id, card)}
+                          disabled={confirmingMessageId === msg.id}
+                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-[#9E2A2B] hover:bg-[#802223] disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                        >
+                          {confirmingMessageId === msg.id ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Marchando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Confirmar y Marchar</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCancelOrder(msg.id)}
+                          disabled={confirmingMessageId === msg.id}
+                          className="py-1.5 px-2 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-semibold transition-colors cursor-pointer"
+                          title="Descartar propuesta"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Timestamp */}
                 <div
@@ -364,7 +629,7 @@ export default function StaffVoiceAgentSection({
           <button
             type="button"
             onClick={() => setRecognitionError(null)}
-            className="text-[10px] text-amber-700 font-bold"
+            className="text-[10px] text-amber-700 font-bold cursor-pointer"
           >
             ✕
           </button>
@@ -378,20 +643,20 @@ export default function StaffVoiceAgentSection({
         </span>
         <button
           type="button"
-          onClick={() => handleUsePreset('mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo')}
-          className="shrink-0 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#9E2A2B]/10 hover:text-[#9E2A2B] border border-stone-200 text-[10.5px] font-medium text-stone-700 transition-colors cursor-pointer flex items-center gap-1"
-        >
-          <Mic className="w-2.5 h-2.5 text-[#9E2A2B]" />
-          <span>Mesa 110 (4 cortadas, 2 molletes...)</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => handleUsePreset('mesa 2, 2 dobles cruzcampo y 1 jamón ibérico')}
           className="shrink-0 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#9E2A2B]/10 hover:text-[#9E2A2B] border border-stone-200 text-[10.5px] font-medium text-stone-700 transition-colors cursor-pointer flex items-center gap-1"
         >
           <Mic className="w-2.5 h-2.5 text-[#9E2A2B]" />
           <span>Mesa 2 (2 dobles, 1 jamón...)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleUsePreset('mesa 110, 4 cortadas, 2 molletes quimera, 1 queso payoyo')}
+          className="shrink-0 px-2.5 py-1 rounded-full bg-stone-100 hover:bg-[#9E2A2B]/10 hover:text-[#9E2A2B] border border-stone-200 text-[10.5px] font-medium text-stone-700 transition-colors cursor-pointer flex items-center gap-1"
+        >
+          <Mic className="w-2.5 h-2.5 text-[#9E2A2B]" />
+          <span>Mesa 110 (4 cortadas, 2 molletes...)</span>
         </button>
 
         <button
@@ -436,7 +701,7 @@ export default function StaffVoiceAgentSection({
               placeholder={
                 isListening
                   ? 'Escuchando tu voz...'
-                  : 'Escribe o dicta tu comando (ej: Mesa 110...)'
+                  : 'Escribe o dicta tu comando (ej: Mesa 2...)'
               }
               className={`w-full text-xs px-3 py-2 rounded-xl border bg-[#FAF8F5] text-stone-800 placeholder:text-stone-400 outline-none transition-colors ${
                 isListening

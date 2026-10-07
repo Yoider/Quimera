@@ -37,6 +37,8 @@ export interface Product {
   totalReviews: number;
   isAvailable: boolean;
   badge?: string; // e.g. "Especialidad de la casa", "Top Ventas"
+  subtype?: string; // e.g. "Cervezas", "Vinos Tintos", "Refrescos"
+  tags?: string[]; // e.g. ["Barril", "Con Alcohol", "Zero", "100% Bellota"]
 }
 
 export interface FilterState {
