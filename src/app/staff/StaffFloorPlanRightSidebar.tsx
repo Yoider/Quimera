@@ -4,11 +4,16 @@ import React, { useState } from 'react';
 import {
   RestaurantTableData,
   RestaurantZoneData,
+  ActiveOrderData,
   saveRestaurantTableAction,
   deleteRestaurantTableAction,
   saveRestaurantZoneAction,
   deleteRestaurantZoneAction,
+  createOrUpdateTableOrderAction,
+  closeAndPayTableOrderAction,
+  openTableServiceAction,
 } from './orderActions';
+import { ProductItem, CategoryItem } from './StaffWaiterPdaModal';
 import {
   Plus,
   Trash2,
@@ -27,6 +32,15 @@ import {
   Square,
   Circle,
   RectangleHorizontal,
+  ShoppingBag,
+  Send,
+  CreditCard,
+  Search,
+  Minus,
+  Clock,
+  CheckCircle2,
+  ChefHat,
+  MessageSquare,
 } from 'lucide-react';
 
 interface StaffFloorPlanRightSidebarProps {
@@ -40,6 +54,12 @@ interface StaffFloorPlanRightSidebarProps {
   snapToGrid: boolean;
   onToggleSnapToGrid: (snap: boolean) => void;
   onClose?: () => void;
+  activeOrder?: ActiveOrderData | null;
+  products?: ProductItem[];
+  categories?: CategoryItem[];
+  activeTab?: 'tables' | 'zones' | 'inspector' | 'order';
+  onTabChange?: (tab: 'tables' | 'zones' | 'inspector' | 'order') => void;
+  onOrderSaved?: () => void;
 }
 
 export default function StaffFloorPlanRightSidebar({
@@ -53,10 +73,22 @@ export default function StaffFloorPlanRightSidebar({
   snapToGrid,
   onToggleSnapToGrid,
   onClose,
+  activeOrder,
+  products = [],
+  categories = [],
+  activeTab: activeTabProp,
+  onTabChange,
+  onOrderSaved,
 }: StaffFloorPlanRightSidebarProps) {
-  const [activeTab, setActiveTab] = useState<'tables' | 'zones' | 'inspector'>(
-    selectedTable ? 'inspector' : 'tables'
+  const [internalActiveTab, setInternalActiveTab] = useState<'tables' | 'zones' | 'inspector' | 'order'>(
+    activeTabProp || (selectedTable ? 'order' : 'tables')
   );
+
+  const activeTab = activeTabProp !== undefined ? activeTabProp : internalActiveTab;
+  const setActiveTab = (tab: 'tables' | 'zones' | 'inspector' | 'order') => {
+    setInternalActiveTab(tab);
+    onTabChange?.(tab);
+  };
 
   // New table form state
   const [newTableNumber, setNewTableNumber] = useState('');
@@ -80,16 +112,162 @@ export default function StaffFloorPlanRightSidebar({
   const [inspectorZone, setInspectorZone] = useState(selectedTable?.zone || 'SALON');
   const [inspectorShape, setInspectorShape] = useState(selectedTable?.shape || 'ROUND');
 
-  // Sync inspector when selected table changes
+  // Comanda taking state
+  const [orderPax, setOrderPax] = useState<number>(activeOrder?.pax || selectedTable?.seats || 2);
+  const [orderCategory, setOrderCategory] = useState<string>('all');
+  const [orderSearch, setOrderSearch] = useState<string>('');
+  const [cart, setCart] = useState<
+    { productId: string; product: ProductItem; quantity: number; notes: string }[]
+  >([]);
+  const [generalNotes, setGeneralNotes] = useState<string>('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const [activeItemNoteId, setActiveItemNoteId] = useState<string | null>(null);
+
+  // Sync inspector & order when selected table changes
   React.useEffect(() => {
     if (selectedTable) {
       setInspectorName(selectedTable.name);
       setInspectorSeats(selectedTable.seats);
       setInspectorZone(selectedTable.zone);
       setInspectorShape(selectedTable.shape);
-      setActiveTab('inspector');
+      setOrderPax(activeOrder?.pax || selectedTable.seats || 2);
+      setCart([]);
+      setGeneralNotes('');
     }
-  }, [selectedTable]);
+  }, [selectedTable?.id, activeOrder?.id]);
+
+  // Sync internalActiveTab if activeTabProp changes
+  React.useEffect(() => {
+    if (activeTabProp) {
+      setInternalActiveTab(activeTabProp);
+    }
+  }, [activeTabProp]);
+
+  // Filter available products for comanda
+  const availableProducts = React.useMemo(() => {
+    return products.filter((p) => {
+      if (!p.isAvailable) return false;
+      if (orderCategory !== 'all' && p.categoryId !== orderCategory) return false;
+      if (orderSearch.trim().length > 0) {
+        const q = orderSearch.toLowerCase();
+        return p.name.toLowerCase().includes(q) || p.format.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [products, orderCategory, orderSearch]);
+
+  const addToCart = (product: ProductItem) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.productId === product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [...prev, { productId: product.id, product, quantity: 1, notes: '' }];
+    });
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.productId === productId);
+      if (existing && existing.quantity > 1) {
+        return prev.map((i) =>
+          i.productId === productId ? { ...i, quantity: i.quantity - 1 } : i
+        );
+      }
+      return prev.filter((i) => i.productId !== productId);
+    });
+  };
+
+  const updateItemNotes = (productId: string, notes: string) => {
+    setCart((prev) =>
+      prev.map((i) => (i.productId === productId ? { ...i, notes } : i))
+    );
+  };
+
+  const cartTotal = React.useMemo(() => {
+    return cart.reduce((acc, i) => acc + i.product.price * i.quantity, 0);
+  }, [cart]);
+
+  const existingTotal = activeOrder?.totalAmount || 0;
+  const grandTotal = existingTotal + cartTotal;
+
+  // Send Order / Marchar a cocina
+  const handleSendOrder = async () => {
+    if (!selectedTable || cart.length === 0) return;
+    setIsSubmittingOrder(true);
+    try {
+      const res = await createOrUpdateTableOrderAction({
+        tableNumber: selectedTable.tableNumber,
+        tableId: selectedTable.id,
+        pax: orderPax,
+        items: cart.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          notes: i.notes || undefined,
+        })),
+        generalNotes: generalNotes.trim() || undefined,
+      });
+
+      if (res.success) {
+        setCart([]);
+        setGeneralNotes('');
+        onOrderSaved?.();
+        onRefreshData();
+      } else {
+        alert(res.error || 'Error al enviar comanda.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de conexión.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  };
+
+  // Pay and close table order
+  const handlePayOrder = async () => {
+    if (!activeOrder || !selectedTable) return;
+    if (confirm(`¿Cobrar comanda de ${selectedTable.name} por un total de ${activeOrder.totalAmount.toFixed(2)}€ y liberar la mesa?`)) {
+      setIsSubmittingOrder(true);
+      try {
+        const res = await closeAndPayTableOrderAction(activeOrder.id);
+        if (res.success) {
+          onOrderSaved?.();
+          onRefreshData();
+        } else {
+          alert(res.error || 'Error al cobrar.');
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsSubmittingOrder(false);
+      }
+    }
+  };
+
+  // Open table service
+  const handleOpenTableService = async () => {
+    if (!selectedTable) return;
+    setIsSubmittingOrder(true);
+    try {
+      const res = await openTableServiceAction({
+        tableNumber: selectedTable.tableNumber,
+        pax: orderPax,
+      });
+      if (res.success) {
+        onOrderSaved?.();
+        onRefreshData();
+      } else {
+        alert(res.error || 'Error al abrir mesa.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  };
 
   // Handle Quick Add Table
   const handleQuickAdd = async (preset: {
@@ -275,6 +453,25 @@ export default function StaffFloorPlanRightSidebar({
       <div className="p-2 border-b border-[#EADBC8] bg-white flex items-center gap-1 shrink-0">
         <button
           type="button"
+          onClick={() => setActiveTab('order')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
+            activeTab === 'order'
+              ? 'bg-[#9E2A2B] text-white shadow-xs font-bold'
+              : selectedTable
+              ? 'text-[#9E2A2B] bg-[#9E2A2B]/10 hover:bg-[#9E2A2B]/15'
+              : 'text-stone-600 hover:bg-stone-50'
+          }`}
+          title="Tomar comanda de la mesa"
+        >
+          <ShoppingBag className="w-3.5 h-3.5" />
+          <span>Comanda</span>
+          {activeOrder && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute top-1 right-1" />
+          )}
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('tables')}
           className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
             activeTab === 'tables'
@@ -320,7 +517,362 @@ export default function StaffFloorPlanRightSidebar({
 
       {/* Tab Contents: Scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar text-xs">
-        {/* ================= TAB: AGREGAR MESAS ================= */}
+        {/* ================= TAB: COMANDA EN MESA ================= */}
+        {activeTab === 'order' && (
+          <div className="space-y-3 animate-in fade-in">
+            {!selectedTable ? (
+              <div className="p-4 rounded-2xl bg-stone-50 border border-dashed border-stone-300 text-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-stone-200 text-stone-500 mx-auto flex items-center justify-center">
+                  <ShoppingBag className="w-5 h-5 text-stone-600" />
+                </div>
+                <h4 className="font-serif font-bold text-xs text-[#2B2523]">
+                  Ninguna mesa seleccionada
+                </h4>
+                <p className="text-[11px] text-stone-500">
+                  Haz clic en una mesa del plano 2D para gestionar o tomar su comanda.
+                </p>
+                <div className="pt-1.5 flex flex-wrap gap-1 justify-center max-h-32 overflow-y-auto">
+                  {tables.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onSelectTable(t)}
+                      className="px-2 py-1 rounded-lg bg-white border border-stone-200 text-[10.5px] font-semibold text-stone-700 hover:border-[#9E2A2B] hover:text-[#9E2A2B] transition-colors cursor-pointer"
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Table Header Hero */}
+                <div className="p-3 rounded-2xl bg-[#2B2523] text-white space-y-2 shadow-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-serif font-bold text-sm text-white">
+                          {selectedTable.name}
+                        </span>
+                        <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-white/15 text-stone-200 font-semibold uppercase">
+                          {selectedTable.zone}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-stone-300 mt-0.5 flex items-center gap-1.5">
+                        <span className={activeOrder ? 'text-amber-300 font-bold' : 'text-emerald-400 font-semibold'}>
+                          {activeOrder ? 'Mesa Ocupada' : 'Mesa Libre'}
+                        </span>
+                        <span>·</span>
+                        <span className="font-mono text-white font-bold">
+                          {grandTotal.toFixed(2)}€
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Pax Stepper */}
+                    <div className="flex items-center bg-stone-800 rounded-xl border border-stone-700 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setOrderPax((p) => Math.max(1, p - 1))}
+                        className="w-5 h-5 flex items-center justify-center text-stone-300 hover:text-white cursor-pointer"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="px-1.5 text-[11px] font-bold text-white min-w-5 text-center">
+                        {orderPax}p
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOrderPax((p) => p + 1)}
+                        className="w-5 h-5 flex items-center justify-center text-stone-300 hover:text-white cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Actions row if occupied or free */}
+                  <div className="flex items-center justify-between pt-1 border-t border-stone-700/60 text-[10.5px]">
+                    {activeOrder ? (
+                      <button
+                        type="button"
+                        onClick={handlePayOrder}
+                        disabled={isSubmittingOrder}
+                        className="text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <CreditCard className="w-3 h-3" />
+                        <span>Cobrar Cuenta ({activeOrder.totalAmount.toFixed(2)}€)</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleOpenTableService}
+                        disabled={isSubmittingOrder}
+                        className="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Users className="w-3 h-3" />
+                        <span>Abrir Servicio ({orderPax} pax)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Existing active order items in course */}
+                {activeOrder && activeOrder.items.length > 0 && (
+                  <div className="bg-amber-50/60 rounded-2xl p-2.5 border border-amber-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-amber-900 font-bold">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-700" />
+                        <span>Marchado en Mesa ({activeOrder.items.length})</span>
+                      </div>
+                      <span className="font-mono">{existingTotal.toFixed(2)}€</span>
+                    </div>
+
+                    <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5 custom-scrollbar text-[11px]">
+                      {activeOrder.items.map((it) => (
+                        <div
+                          key={it.id}
+                          className="flex items-center justify-between bg-white/80 p-1.5 rounded-lg border border-amber-100"
+                        >
+                          <div className="min-w-0 pr-1">
+                            <span className="font-semibold text-stone-800 line-clamp-1">
+                              {it.quantity}x {it.productName}
+                            </span>
+                            {it.notes && (
+                              <span className="text-[9.5px] text-amber-700 block italic">
+                                &quot;{it.notes}&quot;
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-mono text-stone-700 font-bold shrink-0">
+                            {(it.unitPrice * it.quantity).toFixed(2)}€
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Search & Category Pills */}
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Buscar plato, tapa o bebida..."
+                      value={orderSearch}
+                      onChange={(e) => setOrderSearch(e.target.value)}
+                      className="w-full pl-8 pr-2.5 py-1.5 rounded-xl border border-[#EADBC8] text-xs bg-white focus:outline-none focus:border-[#9E2A2B]"
+                    />
+                    {orderSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setOrderSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Categories scroll */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
+                    <button
+                      type="button"
+                      onClick={() => setOrderCategory('all')}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                        orderCategory === 'all'
+                          ? 'bg-[#9E2A2B] text-white shadow-2xs'
+                          : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                      }`}
+                    >
+                      Todos ({products.length})
+                    </button>
+                    {categories.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setOrderCategory(c.id)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                          orderCategory === c.id
+                            ? 'bg-[#9E2A2B] text-white shadow-2xs'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Product Catalog Quick List */}
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {availableProducts.length === 0 ? (
+                    <div className="p-3 text-center text-[11px] text-stone-400">
+                      No se encontraron productos disponibles.
+                    </div>
+                  ) : (
+                    availableProducts.map((p) => {
+                      const inCartItem = cart.find((i) => i.productId === p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between p-1.5 rounded-xl bg-white border border-[#EADBC8] hover:border-[#D4A373] transition-colors"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <span className="font-bold text-[11.5px] text-[#2B2523] block line-clamp-1 leading-tight">
+                              {p.name}
+                            </span>
+                            <span className="text-[9.5px] text-stone-500">
+                              {p.format} · <strong className="text-[#9E2A2B] font-mono">{p.price.toFixed(2)}€</strong>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {inCartItem && (
+                              <span className="w-5 h-5 rounded-full bg-[#9E2A2B] text-white text-[10px] font-bold flex items-center justify-center">
+                                {inCartItem.quantity}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => addToCart(p)}
+                              className="w-7 h-7 rounded-lg bg-[#9E2A2B]/10 hover:bg-[#9E2A2B] text-[#9E2A2B] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                              title="Añadir a la comanda"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Cart: Nuevos Platos a Marchar */}
+                <div className="p-2.5 rounded-2xl bg-stone-50 border border-[#EADBC8] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-serif font-bold text-xs text-[#2B2523] flex items-center gap-1">
+                      <ChefHat className="w-3.5 h-3.5 text-[#9E2A2B]" />
+                      <span>Nuevos a Marchar ({cart.length})</span>
+                    </span>
+                    {cart.length > 0 && (
+                      <span className="font-mono text-xs font-bold text-[#9E2A2B]">
+                        +{cartTotal.toFixed(2)}€
+                      </span>
+                    )}
+                  </div>
+
+                  {cart.length === 0 ? (
+                    <p className="text-[10.5px] text-stone-400 text-center py-2 italic">
+                      Cesta vacía. Toca &quot;+&quot; en los platos para añadir.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5 custom-scrollbar">
+                      {cart.map((item) => (
+                        <div
+                          key={item.productId}
+                          className="bg-white p-2 rounded-xl border border-stone-200 space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="min-w-0">
+                              <span className="font-semibold text-xs text-[#2B2523] block line-clamp-1">
+                                {item.product.name}
+                              </span>
+                              <span className="text-[9.5px] text-stone-500 font-mono">
+                                {(item.product.price * item.quantity).toFixed(2)}€
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveItemNoteId((prev) =>
+                                    prev === item.productId ? null : item.productId
+                                  )
+                                }
+                                className={`p-1 rounded-md text-[10px] ${
+                                  item.notes
+                                    ? 'bg-amber-100 text-amber-800 font-bold'
+                                    : 'text-stone-400 hover:bg-stone-100'
+                                }`}
+                                title="Añadir nota de cocina"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => removeFromCart(item.productId)}
+                                className="w-5 h-5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center cursor-pointer"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+
+                              <span className="w-4 text-center font-bold text-xs">
+                                {item.quantity}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => addToCart(item.product)}
+                                className="w-5 h-5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Item Note Input */}
+                          {(activeItemNoteId === item.productId || item.notes) && (
+                            <input
+                              type="text"
+                              placeholder="Nota: sin sal, poco hecho..."
+                              value={item.notes}
+                              onChange={(e) => updateItemNotes(item.productId, e.target.value)}
+                              className="w-full px-2 py-0.5 rounded-lg border border-amber-200 bg-amber-50/50 text-[10.5px] text-stone-800 placeholder-stone-400 focus:outline-none"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* General notes */}
+                  {cart.length > 0 && (
+                    <input
+                      type="text"
+                      placeholder="Nota general para la comanda (opcional)..."
+                      value={generalNotes}
+                      onChange={(e) => setGeneralNotes(e.target.value)}
+                      className="w-full px-2.5 py-1 rounded-xl border border-stone-200 bg-white text-[10.5px] text-stone-700 placeholder-stone-400"
+                    />
+                  )}
+                </div>
+
+                {/* Marchar a Cocina Submit Button */}
+                <button
+                  type="button"
+                  disabled={cart.length === 0 || isSubmittingOrder}
+                  onClick={handleSendOrder}
+                  className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer ${
+                    cart.length > 0 && !isSubmittingOrder
+                      ? 'bg-[#9E2A2B] hover:bg-[#852223] text-white active:scale-98'
+                      : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    {isSubmittingOrder
+                      ? 'Marchando a cocina...'
+                      : `Marchar a Cocina (+${cartTotal.toFixed(2)}€)`}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {activeTab === 'tables' && (
           <div className="space-y-3 animate-in fade-in">
             {/* Quick Presets */}

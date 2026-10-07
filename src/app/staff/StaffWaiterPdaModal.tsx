@@ -25,7 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-interface ProductItem {
+export interface ProductItem {
   id: string;
   name: string;
   price: number;
@@ -35,7 +35,7 @@ interface ProductItem {
   isAvailable: boolean;
 }
 
-interface CategoryItem {
+export interface CategoryItem {
   id: string;
   name: string;
 }

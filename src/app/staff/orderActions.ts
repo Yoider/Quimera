@@ -568,3 +568,94 @@ export async function closeAndPayTableOrderAction(orderId: string): Promise<{ su
     return { success: false, error: 'Error al cobrar y cerrar la mesa.' };
   }
 }
+
+/**
+ * Transfer an active order from one table to another (when customers change tables)
+ */
+export async function transferTableOrderAction(data: {
+  fromTableNumber: string;
+  toTableNumber: string;
+}): Promise<{ success: boolean; transferredCount?: number; error?: string }> {
+  try {
+    const activeOrders = await prisma.order.findMany({
+      where: {
+        tableNumber: data.fromTableNumber,
+        status: { in: ['PENDING', 'PREPARING', 'SERVED'] },
+      },
+    });
+
+    if (activeOrders.length === 0) {
+      return {
+        success: false,
+        error: `La mesa ${data.fromTableNumber} no tiene ninguna comanda activa para transferir.`,
+      };
+    }
+
+    const destTable = await prisma.restaurantTable.findFirst({
+      where: { tableNumber: data.toTableNumber },
+    });
+
+    for (const ord of activeOrders) {
+      await prisma.order.update({
+        where: { id: ord.id },
+        data: {
+          tableNumber: data.toTableNumber,
+          tableId: destTable ? destTable.id : ord.tableId,
+          notes: ord.notes
+            ? `${ord.notes} (Traspasada desde ${data.fromTableNumber})`
+            : `(Traspasada desde ${data.fromTableNumber})`,
+        },
+      });
+    }
+
+    revalidatePath('/staff');
+    return { success: true, transferredCount: activeOrders.length };
+  } catch (err: any) {
+    console.error('Error transferring table order:', err);
+    return { success: false, error: err.message || 'Error al traspasar la comanda de mesa.' };
+  }
+}
+
+/**
+ * Open a table service (mark it as occupied with initial pax)
+ */
+export async function openTableServiceAction(data: {
+  tableNumber: string;
+  pax: number;
+}): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  try {
+    const existing = await prisma.order.findFirst({
+      where: {
+        tableNumber: data.tableNumber,
+        status: { in: ['PENDING', 'PREPARING', 'SERVED'] },
+      },
+    });
+
+    if (existing) {
+      await prisma.order.update({
+        where: { id: existing.id },
+        data: { pax: data.pax },
+      });
+      revalidatePath('/staff');
+      return { success: true, orderId: existing.id };
+    }
+
+    const orderNumber = `Q-${Math.floor(100 + Math.random() * 900)}`;
+    const newOrder = await prisma.order.create({
+      data: {
+        orderNumber,
+        tableNumber: data.tableNumber,
+        pax: data.pax,
+        status: 'PENDING',
+        totalAmount: 0,
+      },
+    });
+
+    revalidatePath('/staff');
+    return { success: true, orderId: newOrder.id };
+  } catch (err: any) {
+    console.error('Error opening table service:', err);
+    return { success: false, error: err.message || 'Error al abrir la mesa.' };
+  }
+}
+

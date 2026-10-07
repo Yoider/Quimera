@@ -10,10 +10,16 @@ import {
   getRestaurantZonesAction,
   saveRestaurantZoneAction,
   deleteRestaurantZoneAction,
+  transferTableOrderAction,
+  openTableServiceAction,
+  closeAndPayTableOrderAction,
 } from './orderActions';
 import StaffFloorPlanRightSidebar from './StaffFloorPlanRightSidebar';
 import StaffCanvasItemToolbar from './StaffCanvasItemToolbar';
 import StaffKeyboardShortcutsModal from './StaffKeyboardShortcutsModal';
+import StaffTableActionPopover from './StaffTableActionPopover';
+import StaffTransferTableModal from './StaffTransferTableModal';
+import { ProductItem, CategoryItem } from './StaffWaiterPdaModal';
 import {
   Users,
   Beer,
@@ -32,6 +38,8 @@ interface StaffFloorPlanViewProps {
   orders: ActiveOrderData[];
   onSelectTable: (table: RestaurantTableData) => void;
   onRefreshData: () => void;
+  products?: ProductItem[];
+  categories?: CategoryItem[];
 }
 
 export type SelectedCanvasItem =
@@ -55,12 +63,23 @@ export default function StaffFloorPlanView({
   orders,
   onSelectTable,
   onRefreshData,
+  products = [],
+  categories = [],
 }: StaffFloorPlanViewProps) {
   const [isDesignMode, setIsDesignMode] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
   const [selectedTableForInspector, setSelectedTableForInspector] = useState<RestaurantTableData | null>(null);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
+
+  // Table Action Popover state
+  const [activePopoverTable, setActivePopoverTable] = useState<RestaurantTableData | null>(null);
+
+  // Transfer Table Modal state
+  const [transferSourceTable, setTransferSourceTable] = useState<RestaurantTableData | null>(null);
+
+  // Right Sidebar active tab
+  const [sidebarTab, setSidebarTab] = useState<'tables' | 'zones' | 'inspector' | 'order'>('order');
 
   // Selected Canvas Item for intelligent Canva-style toolbar & layer manipulation
   const [selectedCanvasItem, setSelectedCanvasItem] = useState<SelectedCanvasItem>(null);
@@ -295,10 +314,71 @@ export default function StaffFloorPlanView({
       setSelectedCanvasItem({ type: 'table', id: table.id });
       if (isDesignMode) {
         setSelectedTableForInspector(table);
+        setSidebarTab('inspector');
         setIsSidebarOpen(true);
       } else {
-        onSelectTable(table);
+        // Open the Table Action Popover!
+        setActivePopoverTable(table);
       }
+    }
+  };
+
+  // Popover Actions Handlers
+  const handleTakeOrder = (table: RestaurantTableData) => {
+    setActivePopoverTable(null);
+    const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 1024 : true;
+    if (isDesktop) {
+      // Open in Right Sidebar on PC
+      setSelectedTableForInspector(table);
+      setSidebarTab('order');
+      setIsSidebarOpen(true);
+    } else {
+      // Open Waiter PDA Modal on mobile
+      onSelectTable(table);
+    }
+  };
+
+  const handleOpenService = async (table: RestaurantTableData) => {
+    setActivePopoverTable(null);
+    const res = await openTableServiceAction({
+      tableNumber: table.tableNumber,
+      pax: table.seats,
+    });
+    if (res.success) {
+      handleRefreshAll();
+    }
+  };
+
+  const handleTransferTable = (table: RestaurantTableData) => {
+    setActivePopoverTable(null);
+    setTransferSourceTable(table);
+  };
+
+  const handleEditTable = (table: RestaurantTableData) => {
+    setActivePopoverTable(null);
+    setSelectedTableForInspector(table);
+    setSidebarTab('inspector');
+    setIsSidebarOpen(true);
+  };
+
+  const handlePayOrder = async (orderId: string) => {
+    setActivePopoverTable(null);
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (confirm(`¿Cobrar la comanda por un total de ${targetOrder ? targetOrder.totalAmount.toFixed(2) : ''}€ y liberar la mesa?`)) {
+      await closeAndPayTableOrderAction(orderId);
+      handleRefreshAll();
+    }
+  };
+
+  const handleConfirmTransfer = async (fromTableNumber: string, toTableNumber: string) => {
+    const res = await transferTableOrderAction({
+      fromTableNumber,
+      toTableNumber,
+    });
+    if (res.success) {
+      handleRefreshAll();
+    } else {
+      alert(res.error || 'Error al traspasar la mesa');
     }
   };
 
@@ -560,8 +640,16 @@ export default function StaffFloorPlanView({
         return;
       }
 
-      // 3. Escape: Close modal if open, otherwise clear canvas selection
+      // 3. Escape: Close popover, transfer modal, shortcuts modal, or clear selection
       if (e.key === 'Escape') {
+        if (activePopoverTable) {
+          setActivePopoverTable(null);
+          return;
+        }
+        if (transferSourceTable) {
+          setTransferSourceTable(null);
+          return;
+        }
         if (isShortcutsModalOpen) {
           setIsShortcutsModalOpen(false);
           return;
@@ -596,7 +684,7 @@ export default function StaffFloorPlanView({
         return;
       }
 
-      // 5. Enter or Space: Open Table Order PDA / Comanda
+      // 5. Enter or Space: Open Table Options Popover
       if (e.key === 'Enter' || e.key === ' ') {
         if (selectedCanvasItem?.type === 'table') {
           const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
@@ -604,9 +692,10 @@ export default function StaffFloorPlanView({
             e.preventDefault();
             if (isDesignMode) {
               setSelectedTableForInspector(targetTable);
+              setSidebarTab('inspector');
               setIsSidebarOpen(true);
             } else {
-              onSelectTable(targetTable);
+              setActivePopoverTable(targetTable);
             }
           }
         }
@@ -906,7 +995,10 @@ export default function StaffFloorPlanView({
               if (table) handleTablePointerUp(e, table);
             }
           }}
-          onClick={() => setSelectedCanvasItem(null)}
+          onClick={() => {
+            setSelectedCanvasItem(null);
+            setActivePopoverTable(null);
+          }}
           className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
           style={{
             backgroundImage: 'radial-gradient(#D4A373 0.75px, transparent 0.75px)',
@@ -1146,9 +1238,23 @@ export default function StaffFloorPlanView({
               </div>
             );
           })}
+
+          {/* Table Action Popover */}
+          {activePopoverTable && (
+            <StaffTableActionPopover
+              table={activePopoverTable}
+              order={ordersByTable.get(activePopoverTable.tableNumber)}
+              onClose={() => setActivePopoverTable(null)}
+              onOpenService={handleOpenService}
+              onTakeOrder={handleTakeOrder}
+              onTransferTable={handleTransferTable}
+              onEditTable={handleEditTable}
+              onPayOrder={handlePayOrder}
+            />
+          )}
         </div>
 
-        {/* Right Sidebar with 2D Editing Tools */}
+        {/* Right Sidebar with 2D Editing Tools & Order Taking */}
         {isSidebarOpen && (
           <StaffFloorPlanRightSidebar
             isDesignMode={isDesignMode}
@@ -1164,6 +1270,16 @@ export default function StaffFloorPlanView({
             snapToGrid={snapToGrid}
             onToggleSnapToGrid={(snap) => setSnapToGrid(snap)}
             onClose={() => setIsSidebarOpen(false)}
+            activeOrder={
+              selectedTableForInspector
+                ? ordersByTable.get(selectedTableForInspector.tableNumber) || null
+                : null
+            }
+            products={products}
+            categories={categories}
+            activeTab={sidebarTab}
+            onTabChange={(tab) => setSidebarTab(tab)}
+            onOrderSaved={handleRefreshAll}
           />
         )}
       </div>
@@ -1173,6 +1289,19 @@ export default function StaffFloorPlanView({
         isOpen={isShortcutsModalOpen}
         onClose={() => setIsShortcutsModalOpen(false)}
       />
+
+      {/* Transfer Table Modal */}
+      {transferSourceTable && (
+        <StaffTransferTableModal
+          isOpen={true}
+          onClose={() => setTransferSourceTable(null)}
+          sourceTable={transferSourceTable}
+          sourceOrder={ordersByTable.get(transferSourceTable.tableNumber)}
+          allTables={localTables}
+          orders={orders}
+          onConfirmTransfer={handleConfirmTransfer}
+        />
+      )}
     </div>
   );
 }

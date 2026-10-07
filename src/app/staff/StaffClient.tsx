@@ -764,6 +764,8 @@ export default function StaffClient({
                   orders={activeOrdersList}
                   onSelectTable={(table) => setSelectedTableForPda(table)}
                   onRefreshData={loadTablesAndOrders}
+                  products={products}
+                  categories={initialCategories}
                 />
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto">
