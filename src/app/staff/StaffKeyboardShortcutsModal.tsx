@@ -44,6 +44,7 @@ export default function StaffKeyboardShortcutsModal({
         { keys: ['Tab'], description: 'Seleccionar siguiente mesa del plano' },
         { keys: ['Shift', 'Tab'], description: 'Seleccionar mesa anterior' },
         { keys: ['Clic'], description: 'Comandar mesa directamente / Seleccionar zona' },
+        { keys: ['Shift', 'Clic'], description: 'Selección múltiple de varias mesas a la vez' },
         { keys: ['Ctrl', 'Clic'], description: 'Abrir menú de opciones de mesa (mover mesa, cobrar, etc.)' },
         { keys: ['Esc'], description: 'Deseleccionar ítem o cerrar menús' },
       ],
@@ -54,8 +55,8 @@ export default function StaffKeyboardShortcutsModal({
       color: 'border-[#9E2A2B]/30',
       items: [
         { keys: ['D'], description: 'Activar Modo Diseño para permitir mover mesas' },
-        { keys: ['Arrastrar'], description: 'Arrastrar mesa fluidamente con el ratón (solo Modo Diseño)' },
-        { keys: ['↑', '↓', '←', '→'], description: 'Mover mesa o zona con flechas en Modo Diseño (2.5%)' },
+        { keys: ['Arrastrar'], description: 'Mover mesa o grupo de mesas seleccionadas en bloque' },
+        { keys: ['↑', '↓', '←', '→'], description: 'Mover mesa(s) o zona con flechas en Modo Diseño (2.5%)' },
         { keys: ['Shift', 'Flechas'], description: 'Movimiento rápido amplio (5.0%)' },
         { keys: ['Alt', 'Flechas'], description: 'Movimiento fino de precisión (1.0%)' },
       ],
