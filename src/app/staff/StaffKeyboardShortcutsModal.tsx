@@ -74,6 +74,7 @@ export default function StaffKeyboardShortcutsModal({
       icon: <ShoppingBag className="w-4 h-4 text-blue-600" />,
       color: 'border-blue-500/30',
       items: [
+        { keys: ['V'], description: 'Abrir Agente IA de Comandas por Voz' },
         { keys: ['Enter', 'o', 'Espacio'], description: 'Abrir comanda TPV táctil de la mesa' },
         { keys: ['T', 'o', 'M'], description: 'Añadir nueva Mesa rápida al plano' },
         { keys: ['Z'], description: 'Delimitar nueva Zona en el plano' },

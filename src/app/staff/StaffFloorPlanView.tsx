@@ -34,6 +34,7 @@ import {
   MapPin,
   LayoutGrid,
   RotateCcw,
+  Mic,
 } from 'lucide-react';
 
 interface StaffFloorPlanViewProps {
@@ -88,7 +89,7 @@ export default function StaffFloorPlanView({
   const [transferSourceTable, setTransferSourceTable] = useState<RestaurantTableData | null>(null);
 
   // Right Sidebar active tab
-  const [sidebarTab, setSidebarTab] = useState<'tables' | 'zones' | 'inspector' | 'order'>('order');
+  const [sidebarTab, setSidebarTab] = useState<'tables' | 'zones' | 'inspector' | 'order' | 'agent'>('order');
 
   // Selected Canvas Item for intelligent Canva-style toolbar & layer manipulation
   const [selectedCanvasItem, setSelectedCanvasItem] = useState<SelectedCanvasItem>(null);
@@ -808,6 +809,14 @@ export default function StaffFloorPlanView({
         return;
       }
 
+      // 'V': Open Voice Agent Tab
+      if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setSidebarTab('agent');
+        setIsSidebarOpen(true);
+        return;
+      }
+
       // 8. Quick item additions:
       // 'T' or 'M': Quick Add Table
       if ((e.key === 't' || e.key === 'T' || e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
@@ -965,6 +974,24 @@ export default function StaffFloorPlanView({
             <kbd className="hidden md:inline px-1 py-0.2 rounded bg-stone-100 text-[9.5px] font-mono font-bold text-stone-600 border border-stone-300">
               ?
             </kbd>
+          </button>
+
+          {/* Voice Agent Trigger Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setSidebarTab('agent');
+              setIsSidebarOpen(true);
+            }}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs bg-linear-to-r from-[#9E2A2B]/10 to-[#781D1E]/10 hover:from-[#9E2A2B]/20 hover:to-[#781D1E]/20 text-[#9E2A2B] border border-[#9E2A2B]/30"
+            title="Abrir Agente de Comandas por Voz (tecla V)"
+          >
+            <Mic className="w-3.5 h-3.5 text-[#9E2A2B]" />
+            <span className="hidden sm:inline">Agente IA</span>
+            <kbd className="hidden lg:inline px-1 py-0.2 rounded bg-white text-[9px] font-mono font-bold text-stone-500 border border-stone-200">
+              V
+            </kbd>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           </button>
 
           {/* Toggle Sidebar Button */}

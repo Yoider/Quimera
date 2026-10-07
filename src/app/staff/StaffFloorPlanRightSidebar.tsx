@@ -14,6 +14,7 @@ import {
   openTableServiceAction,
 } from './orderActions';
 import { ProductItem, CategoryItem } from './StaffWaiterPdaModal';
+import StaffVoiceAgentSection from './StaffVoiceAgentSection';
 import {
   Plus,
   Trash2,
@@ -41,6 +42,7 @@ import {
   CheckCircle2,
   ChefHat,
   MessageSquare,
+  Mic,
 } from 'lucide-react';
 
 interface StaffFloorPlanRightSidebarProps {
@@ -57,8 +59,8 @@ interface StaffFloorPlanRightSidebarProps {
   activeOrder?: ActiveOrderData | null;
   products?: ProductItem[];
   categories?: CategoryItem[];
-  activeTab?: 'tables' | 'zones' | 'inspector' | 'order';
-  onTabChange?: (tab: 'tables' | 'zones' | 'inspector' | 'order') => void;
+  activeTab?: 'tables' | 'zones' | 'inspector' | 'order' | 'agent';
+  onTabChange?: (tab: 'tables' | 'zones' | 'inspector' | 'order' | 'agent') => void;
   onOrderSaved?: () => void;
 }
 
@@ -80,12 +82,12 @@ export default function StaffFloorPlanRightSidebar({
   onTabChange,
   onOrderSaved,
 }: StaffFloorPlanRightSidebarProps) {
-  const [internalActiveTab, setInternalActiveTab] = useState<'tables' | 'zones' | 'inspector' | 'order'>(
+  const [internalActiveTab, setInternalActiveTab] = useState<'tables' | 'zones' | 'inspector' | 'order' | 'agent'>(
     activeTabProp || (selectedTable ? 'order' : 'tables')
   );
 
   const activeTab = activeTabProp !== undefined ? activeTabProp : internalActiveTab;
-  const setActiveTab = (tab: 'tables' | 'zones' | 'inspector' | 'order') => {
+  const setActiveTab = (tab: 'tables' | 'zones' | 'inspector' | 'order' | 'agent') => {
     setInternalActiveTab(tab);
     onTabChange?.(tab);
   };
@@ -450,11 +452,26 @@ export default function StaffFloorPlanRightSidebar({
       </div>
 
       {/* Segment Navigation */}
-      <div className="p-2 border-b border-[#EADBC8] bg-white flex items-center gap-1 shrink-0">
+      <div className="p-1.5 border-b border-[#EADBC8] bg-white grid grid-cols-5 gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setActiveTab('agent')}
+          className={`py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
+            activeTab === 'agent'
+              ? 'bg-linear-to-r from-[#9E2A2B] to-[#781D1E] text-white shadow-xs font-bold'
+              : 'text-stone-700 hover:bg-stone-50 hover:text-[#9E2A2B]'
+          }`}
+          title="Agente IA: comandar por voz"
+        >
+          <Mic className="w-3.5 h-3.5" />
+          <span>Agente</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute top-1 right-1 animate-pulse" />
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveTab('order')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
+          className={`py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
             activeTab === 'order'
               ? 'bg-[#9E2A2B] text-white shadow-xs font-bold'
               : selectedTable
@@ -473,9 +490,9 @@ export default function StaffFloorPlanRightSidebar({
         <button
           type="button"
           onClick={() => setActiveTab('tables')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+          className={`py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
             activeTab === 'tables'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
+              ? 'bg-[#9E2A2B] text-white shadow-xs font-bold'
               : 'text-stone-600 hover:bg-stone-50'
           }`}
         >
@@ -486,9 +503,9 @@ export default function StaffFloorPlanRightSidebar({
         <button
           type="button"
           onClick={() => setActiveTab('zones')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+          className={`py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
             activeTab === 'zones'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
+              ? 'bg-[#9E2A2B] text-white shadow-xs font-bold'
               : 'text-stone-600 hover:bg-stone-50'
           }`}
         >
@@ -499,9 +516,9 @@ export default function StaffFloorPlanRightSidebar({
         <button
           type="button"
           onClick={() => setActiveTab('inspector')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
+          className={`py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer relative ${
             activeTab === 'inspector'
-              ? 'bg-[#9E2A2B] text-white shadow-xs'
+              ? 'bg-[#9E2A2B] text-white shadow-xs font-bold'
               : selectedTable
               ? 'text-[#9E2A2B] bg-[#9E2A2B]/10 font-bold'
               : 'text-stone-600 hover:bg-stone-50'
@@ -517,6 +534,20 @@ export default function StaffFloorPlanRightSidebar({
 
       {/* Tab Contents: Scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar text-xs">
+        {/* ================= TAB: AGENTE COMANDERO IA ================= */}
+        {activeTab === 'agent' && (
+          <div className="space-y-3 animate-in fade-in">
+            <StaffVoiceAgentSection
+              tables={tables}
+              products={products}
+              selectedTable={selectedTable}
+              onSelectTable={onSelectTable}
+              onOrderSaved={onOrderSaved}
+              onRefreshData={onRefreshData}
+            />
+          </div>
+        )}
+
         {/* ================= TAB: COMANDA EN MESA ================= */}
         {activeTab === 'order' && (
           <div className="space-y-3 animate-in fade-in">
