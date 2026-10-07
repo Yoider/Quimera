@@ -6,9 +6,13 @@ import {
   RestaurantZoneData,
   ActiveOrderData,
   saveRestaurantTableAction,
+  deleteRestaurantTableAction,
   getRestaurantZonesAction,
+  saveRestaurantZoneAction,
+  deleteRestaurantZoneAction,
 } from './orderActions';
 import StaffFloorPlanRightSidebar from './StaffFloorPlanRightSidebar';
+import StaffCanvasItemToolbar from './StaffCanvasItemToolbar';
 import {
   Users,
   Beer,
@@ -28,6 +32,22 @@ interface StaffFloorPlanViewProps {
   onRefreshData: () => void;
 }
 
+export type SelectedCanvasItem =
+  | { type: 'zone'; id: string }
+  | { type: 'table'; id: string }
+  | null;
+
+interface ZoneResizeSession {
+  zoneId: string;
+  handleType: 'SE' | 'E' | 'S' | 'MOVE';
+  startClientX: number;
+  startClientY: number;
+  startPosX: number;
+  startPosY: number;
+  startWidth: number;
+  startHeight: number;
+}
+
 export default function StaffFloorPlanView({
   tables,
   orders,
@@ -39,6 +59,9 @@ export default function StaffFloorPlanView({
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
   const [selectedTableForInspector, setSelectedTableForInspector] = useState<RestaurantTableData | null>(null);
 
+  // Selected Canvas Item for intelligent Canva-style toolbar & layer manipulation
+  const [selectedCanvasItem, setSelectedCanvasItem] = useState<SelectedCanvasItem>(null);
+
   // Local optimistic tables state for 60fps/120fps fluid movement
   const [localTables, setLocalTables] = useState<RestaurantTableData[]>(tables);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
@@ -46,6 +69,8 @@ export default function StaffFloorPlanView({
 
   // Dynamic Zones state
   const [zones, setZones] = useState<RestaurantZoneData[]>([]);
+  const [resizingZoneId, setResizingZoneId] = useState<string | null>(null);
+  const zoneResizeSessionRef = useRef<ZoneResizeSession | null>(null);
 
   // Canvas and RAF dragging refs
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -264,7 +289,7 @@ export default function StaffFloorPlanView({
       // If only held in place without moving, do nothing (no modal, just released)
     } else {
       // It was a CLEAN CLICK (< 220ms and no drag):
-      // OPEN THE MODAL!
+      setSelectedCanvasItem({ type: 'table', id: table.id });
       if (isDesignMode) {
         setSelectedTableForInspector(table);
         setIsSidebarOpen(true);
@@ -272,6 +297,248 @@ export default function StaffFloorPlanView({
         onSelectTable(table);
       }
     }
+  };
+
+  // Start Direct Zone Resizing or Moving on Canvas
+  const handleZoneResizeStart = (
+    e: React.PointerEvent,
+    zone: RestaurantZoneData,
+    handleType: 'SE' | 'E' | 'S' | 'MOVE'
+  ) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    zoneResizeSessionRef.current = {
+      zoneId: zone.id,
+      handleType,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPosX: zone.posX,
+      startPosY: zone.posY,
+      startWidth: zone.width,
+      startHeight: zone.height,
+    };
+    setResizingZoneId(zone.id);
+    setSelectedCanvasItem({ type: 'zone', id: zone.id });
+  };
+
+  // End Direct Zone Resizing or Moving
+  const handleZoneResizeEnd = async (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+
+    const session = zoneResizeSessionRef.current;
+    zoneResizeSessionRef.current = null;
+    setResizingZoneId(null);
+
+    if (rafId.current !== null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+
+    if (!session) return;
+
+    const currentZone = zones.find((z) => z.id === session.zoneId);
+    if (currentZone) {
+      await saveRestaurantZoneAction({
+        id: currentZone.id,
+        code: currentZone.code,
+        name: currentZone.name,
+        subtitle: currentZone.subtitle,
+        color: currentZone.color,
+        posX: currentZone.posX,
+        posY: currentZone.posY,
+        width: currentZone.width,
+        height: currentZone.height,
+      });
+      onRefreshData();
+    }
+  };
+
+  // Unified Canvas Pointer Move: handles both zone resizing and table dragging
+  const handleCanvasPointerMove = (e: React.PointerEvent) => {
+    // 1. Zone Resizing / Moving
+    if (zoneResizeSessionRef.current && canvasRef.current) {
+      const session = zoneResizeSessionRef.current;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const deltaXPercent = ((e.clientX - session.startClientX) / rect.width) * 100;
+      const deltaYPercent = ((e.clientY - session.startClientY) / rect.height) * 100;
+
+      pendingPointer.current = { clientX: e.clientX, clientY: e.clientY };
+
+      if (rafId.current === null) {
+        rafId.current = requestAnimationFrame(() => {
+          rafId.current = null;
+          setZones((prev) =>
+            prev.map((z) => {
+              if (z.id !== session.zoneId) return z;
+              let newWidth = z.width;
+              let newHeight = z.height;
+              let newPosX = z.posX;
+              let newPosY = z.posY;
+
+              if (session.handleType === 'SE') {
+                newWidth = Math.max(15, Math.min(100 - z.posX, session.startWidth + deltaXPercent));
+                newHeight = Math.max(15, Math.min(100 - z.posY, session.startHeight + deltaYPercent));
+              } else if (session.handleType === 'E') {
+                newWidth = Math.max(15, Math.min(100 - z.posX, session.startWidth + deltaXPercent));
+              } else if (session.handleType === 'S') {
+                newHeight = Math.max(15, Math.min(100 - z.posY, session.startHeight + deltaYPercent));
+              } else if (session.handleType === 'MOVE') {
+                newPosX = Math.max(0, Math.min(100 - z.width, session.startPosX + deltaXPercent));
+                newPosY = Math.max(0, Math.min(100 - z.height, session.startPosY + deltaYPercent));
+              }
+
+              if (snapToGrid) {
+                newWidth = Math.round(newWidth / 2.5) * 2.5;
+                newHeight = Math.round(newHeight / 2.5) * 2.5;
+                newPosX = Math.round(newPosX / 2.5) * 2.5;
+                newPosY = Math.round(newPosY / 2.5) * 2.5;
+              }
+
+              return {
+                ...z,
+                posX: Math.round(newPosX * 10) / 10,
+                posY: Math.round(newPosY * 10) / 10,
+                width: Math.round(newWidth * 10) / 10,
+                height: Math.round(newHeight * 10) / 10,
+              };
+            })
+          );
+        });
+      }
+      return;
+    }
+
+    // 2. Table Dragging
+    handleTablePointerMove(e);
+  };
+
+  // Keyboard Escape listener to clear selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedCanvasItem(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Toolbar Actions: Update Zone
+  const handleUpdateZoneFromToolbar = async (zoneId: string, updates: Partial<RestaurantZoneData>) => {
+    const target = zones.find((z) => z.id === zoneId);
+    if (!target) return;
+    const updated = { ...target, ...updates };
+    setZones((prev) => prev.map((z) => (z.id === zoneId ? updated : z)));
+    await saveRestaurantZoneAction({
+      id: updated.id,
+      code: updated.code,
+      name: updated.name,
+      subtitle: updated.subtitle,
+      color: updated.color,
+      posX: updated.posX,
+      posY: updated.posY,
+      width: updated.width,
+      height: updated.height,
+    });
+    onRefreshData();
+  };
+
+  // Toolbar Actions: Delete Zone
+  const handleDeleteZoneFromToolbar = async (zoneId: string) => {
+    setZones((prev) => prev.filter((z) => z.id !== zoneId));
+    setSelectedCanvasItem(null);
+    await deleteRestaurantZoneAction(zoneId);
+    onRefreshData();
+  };
+
+  // Toolbar Actions: Add Table inside Zone
+  const handleAddTableInZone = async (zone: RestaurantZoneData) => {
+    const existingNums = localTables.map((t) => {
+      const n = parseInt(t.tableNumber.replace(/\D/g, ''), 10);
+      return isNaN(n) ? 0 : n;
+    });
+    const nextNum = Math.max(0, ...existingNums) + 1 || localTables.length + 1;
+    const newName = `Mesa ${nextNum}`;
+    const newX = Math.min(90, Math.max(10, Math.round((zone.posX + zone.width / 2) * 10) / 10));
+    const newY = Math.min(90, Math.max(10, Math.round((zone.posY + zone.height / 2) * 10) / 10));
+
+    const res = await saveRestaurantTableAction({
+      tableNumber: `T${nextNum}`,
+      name: newName,
+      zone: zone.code,
+      seats: 4,
+      shape: 'ROUND',
+      color: zone.color,
+      posX: newX,
+      posY: newY,
+    });
+
+    if (res.success && res.table) {
+      setLocalTables((prev) => [...prev, res.table!]);
+      setSelectedCanvasItem({ type: 'table', id: res.table.id });
+      onRefreshData();
+    }
+  };
+
+  // Toolbar Actions: Reorder Layers
+  const handleBringForwardZone = (zoneId: string) => {
+    setZones((prev) => {
+      const idx = prev.findIndex((z) => z.id === zoneId);
+      if (idx === -1 || idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.push(item);
+      return next;
+    });
+  };
+
+  const handleSendBackwardZone = (zoneId: string) => {
+    setZones((prev) => {
+      const idx = prev.findIndex((z) => z.id === zoneId);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.unshift(item);
+      return next;
+    });
+  };
+
+  // Toolbar Actions: Update Table
+  const handleUpdateTableFromToolbar = async (tableId: string, updates: Partial<RestaurantTableData>) => {
+    const target = localTables.find((t) => t.id === tableId);
+    if (!target) return;
+    const updated = { ...target, ...updates };
+    setLocalTables((prev) => prev.map((t) => (t.id === tableId ? updated : t)));
+    await saveRestaurantTableAction({
+      id: updated.id,
+      tableNumber: updated.tableNumber,
+      name: updated.name,
+      zone: updated.zone,
+      seats: updated.seats,
+      shape: updated.shape,
+      color: updated.color || undefined,
+      posX: updated.posX,
+      posY: updated.posY,
+    });
+    onRefreshData();
+  };
+
+  // Toolbar Actions: Delete Table
+  const handleDeleteTableFromToolbar = async (table: RestaurantTableData) => {
+    setLocalTables((prev) => prev.filter((t) => t.id !== table.id));
+    setSelectedCanvasItem(null);
+    await deleteRestaurantTableAction(table.id);
+    onRefreshData();
   };
 
   // Summary counts
@@ -380,52 +647,146 @@ export default function StaffFloorPlanView({
         {/* 2D Interactive Floor Canvas */}
         <div
           ref={canvasRef}
-          onPointerMove={handleTablePointerMove}
+          onPointerMove={handleCanvasPointerMove}
           onPointerUp={(e) => {
-            if (dragStartInfo.current) {
+            if (zoneResizeSessionRef.current) {
+              handleZoneResizeEnd(e);
+            } else if (dragStartInfo.current) {
               const table = localTables.find((t) => t.id === dragStartInfo.current?.tableId);
               if (table) handleTablePointerUp(e, table);
             }
           }}
+          onClick={() => setSelectedCanvasItem(null)}
           className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
           style={{
             backgroundImage: 'radial-gradient(#D4A373 0.75px, transparent 0.75px)',
             backgroundSize: '24px 24px',
           }}
         >
-          {/* Dynamic Delimited Zones */}
-          {zones.map((zone) => {
+          {/* Canva-Style Floating Contextual Toolbar for Selected Item */}
+          <StaffCanvasItemToolbar
+            selectedItem={
+              selectedCanvasItem?.type === 'zone'
+                ? (() => {
+                    const z = zones.find((item) => item.id === selectedCanvasItem.id);
+                    return z ? { type: 'zone', zone: z } : null;
+                  })()
+                : selectedCanvasItem?.type === 'table'
+                ? (() => {
+                    const t = localTables.find((item) => item.id === selectedCanvasItem.id);
+                    return t ? { type: 'table', table: t } : null;
+                  })()
+                : null
+            }
+            allZones={zones}
+            onUpdateZone={handleUpdateZoneFromToolbar}
+            onDeleteZone={handleDeleteZoneFromToolbar}
+            onAddTableInZone={handleAddTableInZone}
+            onBringForwardZone={handleBringForwardZone}
+            onSendBackwardZone={handleSendBackwardZone}
+            onUpdateTable={handleUpdateTableFromToolbar}
+            onDeleteTable={handleDeleteTableFromToolbar}
+            onOpenTableOrder={(table) => onSelectTable(table)}
+            onDeselect={() => setSelectedCanvasItem(null)}
+          />
+
+          {/* Dynamic Delimited Zones with Direct Interactive Resize Handles */}
+          {zones.map((zone, zoneIdx) => {
             const isBarra = zone.code === 'BARRA';
             const isTerraza = zone.code === 'TERRAZA';
+            const isSelected = selectedCanvasItem?.type === 'zone' && selectedCanvasItem.id === zone.id;
+            const isResizing = resizingZoneId === zone.id;
 
             return (
               <div
                 key={zone.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedCanvasItem({ type: 'zone', id: zone.id });
+                }}
                 style={{
                   left: `${zone.posX}%`,
                   top: `${zone.posY}%`,
                   width: `${zone.width}%`,
                   height: `${zone.height}%`,
-                  borderColor: `${zone.color}66`,
-                  backgroundColor: `${zone.color}0D`,
+                  borderColor: isSelected ? zone.color : `${zone.color}66`,
+                  backgroundColor: isSelected ? `${zone.color}1F` : `${zone.color}0D`,
+                  zIndex: isSelected || isResizing ? 25 : 10 + zoneIdx,
                 }}
-                className="absolute rounded-2xl border-2 border-dashed p-2.5 pointer-events-none flex flex-col justify-between transition-all"
+                className={`absolute rounded-2xl border-2 p-2.5 flex flex-col justify-between transition-[background-color,border-color,box-shadow] select-none ${
+                  isSelected
+                    ? 'border-solid shadow-xl ring-2 ring-offset-1 ring-[#9E2A2B]/70 cursor-default'
+                    : 'border-dashed hover:border-solid hover:shadow-md cursor-pointer'
+                }`}
               >
-                <div
-                  className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider"
-                  style={{ color: zone.color }}
-                >
-                  {isBarra ? (
-                    <Beer className="w-3.5 h-3.5" />
-                  ) : isTerraza ? (
-                    <Sun className="w-3.5 h-3.5" />
-                  ) : (
-                    <UtensilsCrossed className="w-3.5 h-3.5" />
+                {/* Zone Header with title and Drag/Move handle */}
+                <div className="flex items-center justify-between gap-1">
+                  <div
+                    className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider"
+                    style={{ color: zone.color }}
+                  >
+                    {isBarra ? (
+                      <Beer className="w-3.5 h-3.5" />
+                    ) : isTerraza ? (
+                      <Sun className="w-3.5 h-3.5" />
+                    ) : (
+                      <UtensilsCrossed className="w-3.5 h-3.5" />
+                    )}
+                    <span className="truncate">{zone.name}</span>
+                  </div>
+
+                  {/* Move Handle (when selected) */}
+                  {isSelected && (
+                    <div
+                      onPointerDown={(e) => handleZoneResizeStart(e, zone, 'MOVE')}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#1F1B1A]/80 text-[#D4A373] text-[10px] font-semibold cursor-move shadow-xs hover:bg-[#1F1B1A]"
+                      title="Arrastra para mover la zona"
+                    >
+                      <Move className="w-3 h-3" />
+                      <span className="hidden sm:inline">Mover</span>
+                    </div>
                   )}
-                  <span className="truncate">{zone.name}</span>
                 </div>
+
                 {zone.subtitle && (
                   <span className="text-[10px] text-stone-400 truncate">{zone.subtitle}</span>
+                )}
+
+                {/* Resize Handles and Dimension Indicator (when selected) */}
+                {isSelected && (
+                  <>
+                    {/* Dimension Tag */}
+                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1F1B1A] text-[#D4A373] border border-stone-700 px-2 py-0.5 rounded-full text-[9.5px] font-mono font-bold shadow-md whitespace-nowrap pointer-events-none z-30">
+                      {Math.round(zone.width)}% × {Math.round(zone.height)}%
+                    </div>
+
+                    {/* Corner SE Handle (Bottom-Right: Width + Height) */}
+                    <div
+                      onPointerDown={(e) => handleZoneResizeStart(e, zone, 'SE')}
+                      className="absolute -bottom-2 -right-2 w-5 h-5 rounded-full bg-white border-2 border-[#9E2A2B] shadow-lg hover:scale-125 transition-transform cursor-se-resize flex items-center justify-center z-40"
+                      title="Arrastra para redimensionar ancho y alto"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-[#9E2A2B]" />
+                    </div>
+
+                    {/* Edge E Handle (Right Border: Width only) */}
+                    <div
+                      onPointerDown={(e) => handleZoneResizeStart(e, zone, 'E')}
+                      className="absolute top-1/2 -right-2 -translate-y-1/2 w-4 h-8 rounded-full bg-white border-2 border-[#9E2A2B] shadow-md hover:scale-115 transition-transform cursor-ew-resize flex items-center justify-center z-40"
+                      title="Arrastra para estirar ancho"
+                    >
+                      <div className="w-1 h-4 rounded-full bg-[#9E2A2B]" />
+                    </div>
+
+                    {/* Edge S Handle (Bottom Border: Height only) */}
+                    <div
+                      onPointerDown={(e) => handleZoneResizeStart(e, zone, 'S')}
+                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-4 rounded-full bg-white border-2 border-[#9E2A2B] shadow-md hover:scale-115 transition-transform cursor-ns-resize flex items-center justify-center z-40"
+                      title="Arrastra para estirar alto"
+                    >
+                      <div className="w-4 h-1 rounded-full bg-[#9E2A2B]" />
+                    </div>
+                  </>
                 )}
               </div>
             );
@@ -439,7 +800,9 @@ export default function StaffFloorPlanView({
             const isPreparing = order?.status === 'PREPARING';
             const isServed = order?.status === 'SERVED';
             const isBeingDragged = draggingTableId === table.id;
-            const isSelected = selectedTableForInspector?.id === table.id;
+            const isSelected =
+              selectedTableForInspector?.id === table.id ||
+              (selectedCanvasItem?.type === 'table' && selectedCanvasItem.id === table.id);
 
             // Shape styles
             let shapeClasses = 'rounded-full w-18 h-18 sm:w-20 sm:h-20';
@@ -543,7 +906,10 @@ export default function StaffFloorPlanView({
             tables={localTables}
             zones={zones}
             selectedTable={selectedTableForInspector}
-            onSelectTable={(table) => setSelectedTableForInspector(table)}
+            onSelectTable={(table) => {
+              setSelectedTableForInspector(table);
+              if (table) setSelectedCanvasItem({ type: 'table', id: table.id });
+            }}
             onRefreshData={handleRefreshAll}
             snapToGrid={snapToGrid}
             onToggleSnapToGrid={(snap) => setSnapToGrid(snap)}
