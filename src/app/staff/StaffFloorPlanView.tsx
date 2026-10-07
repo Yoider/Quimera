@@ -189,24 +189,29 @@ export default function StaffFloorPlanView({
       isHolding: false,
     };
 
-    // Hold timer: if pressed and held for >= 220ms, unlock table to drag and prevent click modal
-    holdTimerRef.current = setTimeout(() => {
-      if (dragStartInfo.current && dragStartInfo.current.tableId === table.id) {
-        dragStartInfo.current.isHolding = true;
-        setIsHoldingTableId(table.id);
-        setDraggingTableId(table.id);
-        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          try {
-            navigator.vibrate(25);
-          } catch (_) {}
+    // Hold timer: ONLY in Design Mode! Outside design mode, tables cannot be moved.
+    if (isDesignMode) {
+      holdTimerRef.current = setTimeout(() => {
+        if (dragStartInfo.current && dragStartInfo.current.tableId === table.id) {
+          dragStartInfo.current.isHolding = true;
+          setIsHoldingTableId(table.id);
+          setDraggingTableId(table.id);
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate(25);
+            } catch (_) {}
+          }
         }
-      }
-    }, 220);
+      }, 220);
+    }
   };
 
   // Handle pointer move: 60fps / 120fps requestAnimationFrame calculation
   const handleTablePointerMove = (e: React.PointerEvent) => {
     if (!dragStartInfo.current) return;
+
+    // Moving tables is strictly forbidden outside Design Mode!
+    if (!isDesignMode) return;
 
     const deltaX = Math.abs(e.clientX - dragStartInfo.current.startClientX);
     const deltaY = Math.abs(e.clientY - dragStartInfo.current.startClientY);
@@ -260,7 +265,7 @@ export default function StaffFloorPlanView({
     }
   };
 
-  // Handle pointer up: discriminate click (open modal) vs hold/drag (move table)
+  // Handle pointer up: discriminate click vs hold/drag (tables move only in design mode)
   const handleTablePointerUp = async (e: React.PointerEvent, table: RestaurantTableData) => {
     e.stopPropagation();
     const targetEl = e.currentTarget as HTMLElement;
@@ -285,11 +290,12 @@ export default function StaffFloorPlanView({
 
     if (!info) return;
 
+    const isCtrlClick = e.ctrlKey || e.metaKey;
     const elapsedTime = Date.now() - info.startTime;
-    const isHoldOrDrag = info.hasMoved || info.isHolding || elapsedTime >= 220;
+    const isHoldOrDrag = isDesignMode && (info.hasMoved || info.isHolding || elapsedTime >= 220);
 
     if (isHoldOrDrag) {
-      // It was a HOLD or DRAG: DO NOT OPEN THE MODAL!
+      // It was a HOLD or DRAG in Design Mode: DO NOT OPEN ANY MODAL
       if (info.hasMoved) {
         // Persist new position to database
         const movedTable = localTables.find((t) => t.id === info.tableId);
@@ -308,17 +314,23 @@ export default function StaffFloorPlanView({
           onRefreshData();
         }
       }
-      // If only held in place without moving, do nothing (no modal, just released)
-    } else {
-      // It was a CLEAN CLICK (< 220ms and no drag):
       setSelectedCanvasItem({ type: 'table', id: table.id });
-      if (isDesignMode) {
+      setSelectedTableForInspector(table);
+    } else {
+      // It was a CLICK:
+      setSelectedCanvasItem({ type: 'table', id: table.id });
+
+      if (isCtrlClick) {
+        // Ctrl + Click: Opens the Table Action Popover with all execution options!
+        setActivePopoverTable(table);
+      } else if (isDesignMode) {
+        // Clean Click in Design Mode: Select for inspector
         setSelectedTableForInspector(table);
         setSidebarTab('inspector');
         setIsSidebarOpen(true);
       } else {
-        // Open the Table Action Popover!
-        setActivePopoverTable(table);
+        // Clean Click outside Design Mode: Directly takes order!
+        handleTakeOrder(table);
       }
     }
   };
@@ -684,18 +696,20 @@ export default function StaffFloorPlanView({
         return;
       }
 
-      // 5. Enter or Space: Open Table Options Popover
+      // 5. Enter or Space: Take Order (or Ctrl+Enter for Popover)
       if (e.key === 'Enter' || e.key === ' ') {
         if (selectedCanvasItem?.type === 'table') {
           const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
           if (targetTable) {
             e.preventDefault();
-            if (isDesignMode) {
+            if (e.ctrlKey || e.metaKey) {
+              setActivePopoverTable(targetTable);
+            } else if (isDesignMode) {
               setSelectedTableForInspector(targetTable);
               setSidebarTab('inspector');
               setIsSidebarOpen(true);
             } else {
-              setActivePopoverTable(targetTable);
+              handleTakeOrder(targetTable);
             }
           }
         }
@@ -711,8 +725,9 @@ export default function StaffFloorPlanView({
         const dx = e.key === 'ArrowRight' ? step : e.key === 'ArrowLeft' ? -step : 0;
         const dy = e.key === 'ArrowDown' ? step : e.key === 'ArrowUp' ? -step : 0;
 
-        // A) Moving a TABLE
+        // A) Moving a TABLE: strictly permitted ONLY in Design Mode!
         if (selectedCanvasItem?.type === 'table') {
+          if (!isDesignMode) return; // Tables can only be moved in Design Mode
           const tableId = selectedCanvasItem.id;
           const currentTable = localTables.find((t) => t.id === tableId);
           if (!currentTable) return;
@@ -892,11 +907,13 @@ export default function StaffFloorPlanView({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {/* Usage hint pill: click vs hold */}
+          {/* Usage hint pill */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-50 border border-stone-200 text-[11px] text-stone-600 shadow-2xs">
             <span className="font-bold text-[#9E2A2B]">💡 Clic:</span> comanda
             <span className="text-stone-300">·</span>
-            <span className="font-bold text-[#9E2A2B]">Sostener:</span> mover mesa
+            <span className="font-bold text-[#9E2A2B]">Ctrl+Clic:</span> opciones
+            <span className="text-stone-300">·</span>
+            <span className="font-bold text-[#9E2A2B]">Modo Diseño (D):</span> mover mesas
           </div>
 
           {/* Snap grid indicator badge */}
@@ -1192,7 +1209,9 @@ export default function StaffFloorPlanView({
                     ? 'z-40 scale-105 cursor-grabbing shadow-2xl ring-4 ring-[#9E2A2B]'
                     : isSelected
                     ? 'z-30 ring-3 ring-[#9E2A2B] shadow-xl'
-                    : 'z-20 cursor-pointer'
+                    : isDesignMode
+                    ? 'z-20 cursor-grab hover:scale-102'
+                    : 'z-20 cursor-pointer hover:scale-102'
                 }`}
               >
                 {/* Floating moving badge while holding / dragging */}
