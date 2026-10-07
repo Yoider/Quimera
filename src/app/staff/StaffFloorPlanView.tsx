@@ -13,6 +13,7 @@ import {
 } from './orderActions';
 import StaffFloorPlanRightSidebar from './StaffFloorPlanRightSidebar';
 import StaffCanvasItemToolbar from './StaffCanvasItemToolbar';
+import StaffKeyboardShortcutsModal from './StaffKeyboardShortcutsModal';
 import {
   Users,
   Beer,
@@ -23,6 +24,7 @@ import {
   Edit3,
   Move,
   Grid,
+  Keyboard,
 } from 'lucide-react';
 
 interface StaffFloorPlanViewProps {
@@ -58,6 +60,7 @@ export default function StaffFloorPlanView({
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
   const [selectedTableForInspector, setSelectedTableForInspector] = useState<RestaurantTableData | null>(null);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
 
   // Selected Canvas Item for intelligent Canva-style toolbar & layer manipulation
   const [selectedCanvasItem, setSelectedCanvasItem] = useState<SelectedCanvasItem>(null);
@@ -422,16 +425,6 @@ export default function StaffFloorPlanView({
     handleTablePointerMove(e);
   };
 
-  // Keyboard Escape listener to clear selection
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedCanvasItem(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Toolbar Actions: Update Zone
   const handleUpdateZoneFromToolbar = async (zoneId: string, updates: Partial<RestaurantZoneData>) => {
@@ -541,6 +534,234 @@ export default function StaffFloorPlanView({
     onRefreshData();
   };
 
+  // Comprehensive Keyboard Shortcuts Listener for 2D Floor Plan & Service
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isInput =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(target?.isContentEditable);
+
+      // 1. Safeguard: if writing inside any input/textarea, pause board shortcuts
+      if (isInput) {
+        if (e.key === 'Escape') {
+          target?.blur();
+        }
+        return;
+      }
+
+      // 2. Open / Close Shortcuts Help Modal ('?' or '/')
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setIsShortcutsModalOpen((prev) => !prev);
+        return;
+      }
+
+      // 3. Escape: Close modal if open, otherwise clear canvas selection
+      if (e.key === 'Escape') {
+        if (isShortcutsModalOpen) {
+          setIsShortcutsModalOpen(false);
+          return;
+        }
+        setSelectedCanvasItem(null);
+        return;
+      }
+
+      // 4. Tab / Shift+Tab: Cycle through tables in order
+      if (e.key === 'Tab') {
+        if (localTables.length === 0) return;
+        e.preventDefault();
+
+        const currentIdx = localTables.findIndex(
+          (t) => selectedCanvasItem?.type === 'table' && selectedCanvasItem.id === t.id
+        );
+
+        let nextIdx: number;
+        if (e.shiftKey) {
+          // Shift+Tab: Previous table
+          nextIdx = currentIdx <= 0 ? localTables.length - 1 : currentIdx - 1;
+        } else {
+          // Tab: Next table
+          nextIdx = currentIdx === -1 || currentIdx >= localTables.length - 1 ? 0 : currentIdx + 1;
+        }
+
+        const targetTable = localTables[nextIdx];
+        if (targetTable) {
+          setSelectedCanvasItem({ type: 'table', id: targetTable.id });
+          setSelectedTableForInspector(targetTable);
+        }
+        return;
+      }
+
+      // 5. Enter or Space: Open Table Order PDA / Comanda
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (selectedCanvasItem?.type === 'table') {
+          const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
+          if (targetTable) {
+            e.preventDefault();
+            if (isDesignMode) {
+              setSelectedTableForInspector(targetTable);
+              setIsSidebarOpen(true);
+            } else {
+              onSelectTable(targetTable);
+            }
+          }
+        }
+        return;
+      }
+
+      // 6. Arrow Keys: Move selected table or zone
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+
+        // Step size: Shift (5%), Alt (1%), Default (snapToGrid ? 2.5% : 1%)
+        const step = e.shiftKey ? 5 : e.altKey ? 1 : snapToGrid ? 2.5 : 1;
+        const dx = e.key === 'ArrowRight' ? step : e.key === 'ArrowLeft' ? -step : 0;
+        const dy = e.key === 'ArrowDown' ? step : e.key === 'ArrowUp' ? -step : 0;
+
+        // A) Moving a TABLE
+        if (selectedCanvasItem?.type === 'table') {
+          const tableId = selectedCanvasItem.id;
+          const currentTable = localTables.find((t) => t.id === tableId);
+          if (!currentTable) return;
+
+          const nextX = Math.round(Math.max(5, Math.min(95, currentTable.posX + dx)) * 10) / 10;
+          const nextY = Math.round(Math.max(5, Math.min(95, currentTable.posY + dy)) * 10) / 10;
+
+          const updated = { ...currentTable, posX: nextX, posY: nextY };
+          setLocalTables((prev) => prev.map((t) => (t.id === tableId ? updated : t)));
+
+          saveRestaurantTableAction({
+            id: updated.id,
+            tableNumber: updated.tableNumber,
+            name: updated.name,
+            zone: updated.zone,
+            seats: updated.seats,
+            shape: updated.shape,
+            color: updated.color || undefined,
+            posX: updated.posX,
+            posY: updated.posY,
+          }).then(() => onRefreshData());
+          return;
+        }
+
+        // B) Moving a ZONE
+        if (selectedCanvasItem?.type === 'zone') {
+          const zoneId = selectedCanvasItem.id;
+          const currentZone = zones.find((z) => z.id === zoneId);
+          if (!currentZone) return;
+
+          const nextX = Math.round(Math.max(0, Math.min(100 - currentZone.width, currentZone.posX + dx)) * 10) / 10;
+          const nextY = Math.round(Math.max(0, Math.min(100 - currentZone.height, currentZone.posY + dy)) * 10) / 10;
+
+          const updated = { ...currentZone, posX: nextX, posY: nextY };
+          setZones((prev) => prev.map((z) => (z.id === zoneId ? updated : z)));
+
+          saveRestaurantZoneAction({
+            id: updated.id,
+            code: updated.code,
+            name: updated.name,
+            subtitle: updated.subtitle,
+            color: updated.color,
+            posX: updated.posX,
+            posY: updated.posY,
+            width: updated.width,
+            height: updated.height,
+          }).then(() => onRefreshData());
+          return;
+        }
+        return;
+      }
+
+      // 7. Mode toggles:
+      // 'D': Toggle Design Mode
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setIsDesignMode((prev) => {
+          const next = !prev;
+          if (next) setIsSidebarOpen(true);
+          return next;
+        });
+        return;
+      }
+
+      // 'G': Toggle Snap to Grid
+      if ((e.key === 'g' || e.key === 'G') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setSnapToGrid((prev) => !prev);
+        return;
+      }
+
+      // 'S': Toggle Right Sidebar
+      if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+        return;
+      }
+
+      // 8. Quick item additions:
+      // 'T' or 'M': Quick Add Table
+      if ((e.key === 't' || e.key === 'T' || e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const activeZone =
+          selectedCanvasItem?.type === 'zone'
+            ? zones.find((z) => z.id === selectedCanvasItem.id)
+            : zones[0];
+        if (activeZone) {
+          handleAddTableInZone(activeZone);
+        }
+        return;
+      }
+
+      // 'Z': Delimit/Select Zone or trigger new zone sidebar
+      if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setIsSidebarOpen(true);
+        return;
+      }
+
+      // 9. Delete / Backspace: Remove selected table or zone
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedCanvasItem?.type === 'table') {
+          const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
+          if (targetTable) {
+            e.preventDefault();
+            if (confirm(`¿Eliminar la mesa "${targetTable.name}" del plano?`)) {
+              handleDeleteTableFromToolbar(targetTable);
+            }
+          }
+          return;
+        }
+
+        if (selectedCanvasItem?.type === 'zone') {
+          const targetZone = zones.find((z) => z.id === selectedCanvasItem.id);
+          if (targetZone) {
+            e.preventDefault();
+            if (confirm(`¿Eliminar la zona "${targetZone.name}" del plano?`)) {
+              handleDeleteZoneFromToolbar(targetZone.id);
+            }
+          }
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    localTables,
+    zones,
+    selectedCanvasItem,
+    isDesignMode,
+    snapToGrid,
+    isShortcutsModalOpen,
+    onSelectTable,
+    onRefreshData,
+  ]);
+
   // Summary counts
   const totalTables = localTables.length;
   const occupiedTables = localTables.filter((t) => ordersByTable.has(t.tableNumber)).length;
@@ -590,12 +811,36 @@ export default function StaffFloorPlanView({
           </div>
 
           {/* Snap grid indicator badge */}
-          {snapToGrid && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 text-[10.5px] font-semibold text-stone-600 border border-stone-200">
-              <Grid className="w-3 h-3 text-[#D4A373]" />
-              <span>Snap 2.5%</span>
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10.5px] font-semibold border cursor-pointer transition-colors ${
+              snapToGrid
+                ? 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
+                : 'bg-stone-50 text-stone-400 border-dashed border-stone-200 hover:bg-stone-100'
+            }`}
+            title="Conmutar Snap 2.5% a rejilla (tecla G)"
+          >
+            <Grid className={`w-3 h-3 ${snapToGrid ? 'text-[#D4A373]' : 'text-stone-400'}`} />
+            <span>Snap 2.5%</span>
+            <kbd className="px-1 py-0.2 rounded bg-white text-[9px] font-mono font-bold text-stone-500 border border-stone-200">
+              G
+            </kbd>
+          </button>
+
+          {/* Shortcuts Modal Trigger Button */}
+          <button
+            type="button"
+            onClick={() => setIsShortcutsModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs bg-white hover:bg-stone-50 text-stone-700 border border-stone-200"
+            title="Ver guía completa de atajos de teclado (tecla ?)"
+          >
+            <Keyboard className="w-3.5 h-3.5 text-[#9E2A2B]" />
+            <span className="hidden sm:inline">Atajos</span>
+            <kbd className="hidden md:inline px-1 py-0.2 rounded bg-stone-100 text-[9.5px] font-mono font-bold text-stone-600 border border-stone-300">
+              ?
+            </kbd>
+          </button>
 
           {/* Toggle Sidebar Button */}
           <button
@@ -606,11 +851,15 @@ export default function StaffFloorPlanView({
                 ? 'bg-[#9E2A2B]/10 text-[#9E2A2B] border border-[#9E2A2B]/30'
                 : 'bg-white hover:bg-stone-50 text-stone-700 border border-stone-200'
             }`}
+            title="Mostrar u ocultar herramientas laterales (tecla S)"
           >
             <Sliders className="w-3.5 h-3.5 text-[#9E2A2B]" />
             <span className="hidden sm:inline">
               {isSidebarOpen ? 'Ocultar Herramientas' : 'Herramientas 2D'}
             </span>
+            <kbd className="hidden lg:inline px-1 py-0.2 rounded bg-white text-[9px] font-mono font-bold text-stone-500 border border-stone-200">
+              S
+            </kbd>
           </button>
 
           {/* Toggle Design Mode */}
@@ -626,16 +875,17 @@ export default function StaffFloorPlanView({
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 : 'bg-stone-100 hover:bg-stone-200 text-[#2B2523] border border-[#EADBC8]'
             }`}
+            title="Alternar modo de diseño y edición del plano (tecla D)"
           >
             {isDesignMode ? (
               <>
                 <Check className="w-3.5 h-3.5" />
-                <span>Finalizar Edición</span>
+                <span>Finalizar (D)</span>
               </>
             ) : (
               <>
                 <Edit3 className="w-3.5 h-3.5 text-[#9E2A2B]" />
-                <span>Modo Diseño</span>
+                <span>Modo Diseño (D)</span>
               </>
             )}
           </button>
@@ -917,6 +1167,12 @@ export default function StaffFloorPlanView({
           />
         )}
       </div>
+
+      {/* Keyboard Shortcuts Interactive Modal */}
+      <StaffKeyboardShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
     </div>
   );
 }
