@@ -399,6 +399,7 @@ export default function StaffFloorPlanView({
     zone: RestaurantZoneData,
     handleType: 'SE' | 'E' | 'S' | 'MOVE'
   ) => {
+    if (!isDesignMode) return;
     if (e.button !== 0) return;
     e.stopPropagation();
 
@@ -460,7 +461,7 @@ export default function StaffFloorPlanView({
   // Unified Canvas Pointer Move: handles both zone resizing and table dragging
   const handleCanvasPointerMove = (e: React.PointerEvent) => {
     // 1. Zone Resizing / Moving
-    if (zoneResizeSessionRef.current && canvasRef.current) {
+    if (isDesignMode && zoneResizeSessionRef.current && canvasRef.current) {
       const session = zoneResizeSessionRef.current;
       const rect = canvasRef.current.getBoundingClientRect();
       const deltaXPercent = ((e.clientX - session.startClientX) / rect.width) * 100;
@@ -748,8 +749,9 @@ export default function StaffFloorPlanView({
           return;
         }
 
-        // B) Moving a ZONE
+        // B) Moving a ZONE (only when design mode / edition is ON)
         if (selectedCanvasItem?.type === 'zone') {
+          if (!isDesignMode) return;
           const zoneId = selectedCanvasItem.id;
           const currentZone = zones.find((z) => z.id === zoneId);
           if (!currentZone) return;
@@ -782,7 +784,11 @@ export default function StaffFloorPlanView({
         e.preventDefault();
         setIsDesignMode((prev) => {
           const next = !prev;
-          if (next) setIsSidebarOpen(true);
+          if (next) {
+            setIsSidebarOpen(true);
+          } else {
+            setSelectedCanvasItem(null);
+          }
           return next;
         });
         return;
@@ -987,7 +993,11 @@ export default function StaffFloorPlanView({
             onClick={() => {
               const nextMode = !isDesignMode;
               setIsDesignMode(nextMode);
-              if (nextMode) setIsSidebarOpen(true);
+              if (nextMode) {
+                setIsSidebarOpen(true);
+              } else {
+                setSelectedCanvasItem(null);
+              }
             }}
             className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
               isDesignMode
@@ -1068,7 +1078,7 @@ export default function StaffFloorPlanView({
           {/* Canva-Style Floating Contextual Toolbar for Selected Item */}
           <StaffCanvasItemToolbar
             selectedItem={
-              selectedCanvasItem?.type === 'zone'
+              selectedCanvasItem?.type === 'zone' && isDesignMode
                 ? (() => {
                     const z = zones.find((item) => item.id === selectedCanvasItem.id);
                     return z ? { type: 'zone', zone: z } : null;
@@ -1096,15 +1106,17 @@ export default function StaffFloorPlanView({
           {zones.map((zone, zoneIdx) => {
             const isBarra = zone.code === 'BARRA';
             const isTerraza = zone.code === 'TERRAZA';
-            const isSelected = selectedCanvasItem?.type === 'zone' && selectedCanvasItem.id === zone.id;
-            const isResizing = resizingZoneId === zone.id;
+            const isSelected = selectedCanvasItem?.type === 'zone' && selectedCanvasItem.id === zone.id && isDesignMode;
+            const isResizing = resizingZoneId === zone.id && isDesignMode;
 
             return (
               <div
                 key={zone.id}
                 onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedCanvasItem({ type: 'zone', id: zone.id });
+                  if (isDesignMode) {
+                    e.stopPropagation();
+                    setSelectedCanvasItem({ type: 'zone', id: zone.id });
+                  }
                 }}
                 style={{
                   left: `${zone.posX}%`,
@@ -1118,7 +1130,9 @@ export default function StaffFloorPlanView({
                 className={`absolute rounded-2xl border-2 p-2.5 flex flex-col justify-between transition-[background-color,border-color,box-shadow] select-none ${
                   isSelected
                     ? 'border-solid shadow-xl ring-2 ring-offset-1 ring-[#9E2A2B]/70 cursor-default'
-                    : 'border-dashed hover:border-solid hover:shadow-md cursor-pointer'
+                    : isDesignMode
+                    ? 'border-dashed hover:border-solid hover:shadow-md cursor-pointer'
+                    : 'border-dashed cursor-default'
                 }`}
               >
                 {/* Zone Header with title and Drag/Move handle */}
@@ -1137,8 +1151,8 @@ export default function StaffFloorPlanView({
                     <span className="truncate">{zone.name}</span>
                   </div>
 
-                  {/* Move Handle (when selected) */}
-                  {isSelected && (
+                  {/* Move Handle (when selected in design mode) */}
+                  {isSelected && isDesignMode && (
                     <div
                       onPointerDown={(e) => handleZoneResizeStart(e, zone, 'MOVE')}
                       className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#1F1B1A]/80 text-[#D4A373] text-[10px] font-semibold cursor-move shadow-xs hover:bg-[#1F1B1A]"
@@ -1154,8 +1168,8 @@ export default function StaffFloorPlanView({
                   <span className="text-[10px] text-stone-400 truncate">{zone.subtitle}</span>
                 )}
 
-                {/* Resize Handles and Dimension Indicator (when selected) */}
-                {isSelected && (
+                {/* Resize Handles and Dimension Indicator (when selected in design mode) */}
+                {isSelected && isDesignMode && (
                   <>
                     {/* Dimension Tag */}
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#1F1B1A] text-[#D4A373] border border-stone-700 px-2 py-0.5 rounded-full text-[9.5px] font-mono font-bold shadow-md whitespace-nowrap pointer-events-none z-30">
@@ -1336,7 +1350,12 @@ export default function StaffFloorPlanView({
         {isSidebarOpen && (
           <StaffFloorPlanRightSidebar
             isDesignMode={isDesignMode}
-            onToggleDesignMode={(active) => setIsDesignMode(active)}
+            onToggleDesignMode={(active) => {
+              setIsDesignMode(active);
+              if (!active) {
+                setSelectedCanvasItem(null);
+              }
+            }}
             tables={localTables}
             zones={zones}
             selectedTable={selectedTableForInspector}
