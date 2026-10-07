@@ -532,22 +532,21 @@ export default function StaffFloorPlanRightSidebar({
         </button>
       </div>
 
-      {/* Tab Contents: Scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar text-xs">
-        {/* ================= TAB: AGENTE COMANDERO IA ================= */}
-        {activeTab === 'agent' && (
-          <div className="space-y-3 animate-in fade-in">
-            <StaffVoiceAgentSection
-              tables={tables}
-              products={products}
-              selectedTable={selectedTable}
-              onSelectTable={onSelectTable}
-              onOrderSaved={onOrderSaved}
-              onRefreshData={onRefreshData}
-            />
-          </div>
-        )}
-
+      {/* Tab Contents */}
+      {activeTab === 'agent' ? (
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden animate-in fade-in">
+          <StaffVoiceAgentSection
+            tables={tables}
+            products={products}
+            selectedTable={selectedTable}
+            onSelectTable={onSelectTable}
+            onOrderSaved={onOrderSaved}
+            onRefreshData={onRefreshData}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar text-xs">
         {/* ================= TAB: COMANDA EN MESA ================= */}
         {activeTab === 'order' && (
           <div className="space-y-3 animate-in fade-in">
@@ -1421,6 +1420,8 @@ export default function StaffFloorPlanRightSidebar({
           Mantén presionado sobre una mesa para arrastrarla de forma fluida a 60fps.
         </p>
       </div>
+        </>
+      )}
 
       {/* Modal: Crear Nueva Zona */}
       {isNewZoneModalOpen && (
