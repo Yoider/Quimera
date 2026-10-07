@@ -294,40 +294,42 @@ export default function StaffFloorPlanView({
 
     if (!info) return;
 
-    const elapsedTime = Date.now() - info.startTime;
-    const isHoldOrDrag = info.hasMoved || info.isHolding || elapsedTime >= 220;
+    const hasMoved = info.hasMoved;
 
-    if (isHoldOrDrag) {
-      // It was a HOLD or DRAG: DO NOT OPEN THE MODAL!
-      if (info.hasMoved) {
-        // Persist new position to database
-        const movedTable = localTables.find((t) => t.id === info.tableId);
-        if (movedTable) {
-          await saveRestaurantTableAction({
-            id: movedTable.id,
-            tableNumber: movedTable.tableNumber,
-            name: movedTable.name,
-            zone: movedTable.zone,
-            seats: movedTable.seats,
-            shape: movedTable.shape,
-            color: movedTable.color || undefined,
-            posX: movedTable.posX,
-            posY: movedTable.posY,
-          });
-          onRefreshData();
-        }
+    if (hasMoved) {
+      // It was an actual DRAG (table position changed):
+      const movedTable = localTables.find((t) => t.id === info.tableId);
+      if (movedTable) {
+        await saveRestaurantTableAction({
+          id: movedTable.id,
+          tableNumber: movedTable.tableNumber,
+          name: movedTable.name,
+          zone: movedTable.zone,
+          seats: movedTable.seats,
+          shape: movedTable.shape,
+          color: movedTable.color || undefined,
+          posX: movedTable.posX,
+          posY: movedTable.posY,
+        });
+        onRefreshData();
       }
-      // If only held in place without moving, do nothing (no modal, just released)
     } else {
-      // It was a CLEAN CLICK (< 220ms and no drag):
-      setSelectedCanvasItem({ type: 'table', id: table.id });
-      if (isDesignMode) {
+      // It was a CLEAN CLICK (no position movement):
+      if (!isDesignMode && !isSidebarOpen) {
+        // Neither 2D tools nor design mode enabled: OPEN THE POPUP!
+        setActivePopoverTable(table);
+        setSelectedTableForInspector(table);
+        setSelectedCanvasItem(null);
+      } else if (isDesignMode) {
+        // Design mode enabled: select for layout moving/inspection
+        setSelectedCanvasItem({ type: 'table', id: table.id });
         setSelectedTableForInspector(table);
         setSidebarTab('inspector');
         setIsSidebarOpen(true);
-      } else {
-        // Open the Table Action Popover!
-        setActivePopoverTable(table);
+      } else if (isSidebarOpen) {
+        // 2D Tools sidebar enabled: select table in sidebar
+        setSelectedTableForInspector(table);
+        setSelectedCanvasItem({ type: 'table', id: table.id });
       }
     }
   };
@@ -1026,6 +1028,9 @@ export default function StaffFloorPlanView({
           onClick={() => {
             setSelectedCanvasItem(null);
             setActivePopoverTable(null);
+            if (!isSidebarOpen) {
+              setSelectedTableForInspector(null);
+            }
           }}
           className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
           style={{
@@ -1068,7 +1073,7 @@ export default function StaffFloorPlanView({
                     const z = zones.find((item) => item.id === selectedCanvasItem.id);
                     return z ? { type: 'zone', zone: z } : null;
                   })()
-                : selectedCanvasItem?.type === 'table'
+                : selectedCanvasItem?.type === 'table' && isDesignMode
                 ? (() => {
                     const t = localTables.find((item) => item.id === selectedCanvasItem.id);
                     return t ? { type: 'table', table: t } : null;
@@ -1236,6 +1241,24 @@ export default function StaffFloorPlanView({
                 onPointerDown={(e) => handleTablePointerDown(e, table)}
                 onPointerMove={handleTablePointerMove}
                 onPointerUp={(e) => handleTablePointerUp(e, table)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (dragStartInfo.current?.hasMoved) return;
+
+                  if (!isDesignMode && !isSidebarOpen) {
+                    setActivePopoverTable(table);
+                    setSelectedTableForInspector(table);
+                    setSelectedCanvasItem(null);
+                  } else if (isDesignMode) {
+                    setSelectedCanvasItem({ type: 'table', id: table.id });
+                    setSelectedTableForInspector(table);
+                    setSidebarTab('inspector');
+                    setIsSidebarOpen(true);
+                  } else if (isSidebarOpen) {
+                    setSelectedTableForInspector(table);
+                    setSelectedCanvasItem({ type: 'table', id: table.id });
+                  }
+                }}
                 style={{
                   left: `${table.posX}%`,
                   top: `${table.posY}%`,
