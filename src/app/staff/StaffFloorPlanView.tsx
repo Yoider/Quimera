@@ -31,9 +31,9 @@ import {
   Move,
   Grid,
   Keyboard,
-  Layers,
-  Trash2,
-  X,
+  MapPin,
+  LayoutGrid,
+  RotateCcw,
 } from 'lucide-react';
 
 interface StaffFloorPlanViewProps {
@@ -43,6 +43,9 @@ interface StaffFloorPlanViewProps {
   onRefreshData: () => void;
   products?: ProductItem[];
   categories?: CategoryItem[];
+  ordersViewMode?: 'floor' | 'kanban';
+  onSetOrdersViewMode?: (mode: 'floor' | 'kanban') => void;
+  kanbanOrdersCount?: number;
 }
 
 export type SelectedCanvasItem =
@@ -68,6 +71,9 @@ export default function StaffFloorPlanView({
   onRefreshData,
   products = [],
   categories = [],
+  ordersViewMode = 'floor',
+  onSetOrdersViewMode,
+  kanbanOrdersCount,
 }: StaffFloorPlanViewProps) {
   const [isDesignMode, setIsDesignMode] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -86,9 +92,6 @@ export default function StaffFloorPlanView({
 
   // Selected Canvas Item for intelligent Canva-style toolbar & layer manipulation
   const [selectedCanvasItem, setSelectedCanvasItem] = useState<SelectedCanvasItem>(null);
-
-  // Multi-Selection State for Shift + Click on tables
-  const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
 
   // Local optimistic tables state for 60fps/120fps fluid movement
   const [localTables, setLocalTables] = useState<RestaurantTableData[]>(tables);
@@ -117,7 +120,6 @@ export default function StaffFloorPlanView({
     offsetY: number;
     hasMoved: boolean;
     isHolding: boolean;
-    groupInitialPositions?: { id: string; posX: number; posY: number }[];
   } | null>(null);
 
   // Sync local tables when parent tables change and user is not actively dragging
@@ -182,13 +184,6 @@ export default function StaffFloorPlanView({
       offsetY = clickYPercent - table.posY;
     }
 
-    const isPartOfGroup = selectedTableIds.includes(table.id) && selectedTableIds.length > 1;
-    const groupInitialPositions = isPartOfGroup
-      ? localTables
-          .filter((t) => selectedTableIds.includes(t.id))
-          .map((t) => ({ id: t.id, posX: t.posX, posY: t.posY }))
-      : undefined;
-
     dragStartInfo.current = {
       tableId: table.id,
       tableNumber: table.tableNumber,
@@ -201,32 +196,26 @@ export default function StaffFloorPlanView({
       offsetY,
       hasMoved: false,
       isHolding: false,
-      groupInitialPositions,
     };
 
-    // Hold timer: ONLY in Design Mode! (And not when Shift is held, since Shift is for toggling selection)
-    if (isDesignMode && !e.shiftKey) {
-      holdTimerRef.current = setTimeout(() => {
-        if (dragStartInfo.current && dragStartInfo.current.tableId === table.id) {
-          dragStartInfo.current.isHolding = true;
-          setIsHoldingTableId(table.id);
-          setDraggingTableId(table.id);
-          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-            try {
-              navigator.vibrate(25);
-            } catch (_) {}
-          }
+    // Hold timer: if pressed and held for >= 220ms, unlock table to drag and prevent click modal
+    holdTimerRef.current = setTimeout(() => {
+      if (dragStartInfo.current && dragStartInfo.current.tableId === table.id) {
+        dragStartInfo.current.isHolding = true;
+        setIsHoldingTableId(table.id);
+        setDraggingTableId(table.id);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate(25);
+          } catch (_) {}
         }
-      }, 220);
-    }
+      }
+    }, 220);
   };
 
   // Handle pointer move: 60fps / 120fps requestAnimationFrame calculation
   const handleTablePointerMove = (e: React.PointerEvent) => {
     if (!dragStartInfo.current) return;
-
-    // Moving tables is strictly forbidden outside Design Mode or when Shift is held!
-    if (!isDesignMode || e.shiftKey) return;
 
     const deltaX = Math.abs(e.clientX - dragStartInfo.current.startClientX);
     const deltaY = Math.abs(e.clientY - dragStartInfo.current.startClientY);
@@ -259,50 +248,8 @@ export default function StaffFloorPlanView({
         if (!pendingPointer.current || !canvasRef.current || !dragStartInfo.current) return;
 
         const rect = canvasRef.current.getBoundingClientRect();
-
-        // 1. Group drag: move all selected tables together by the same delta!
-        if (
-          dragStartInfo.current.groupInitialPositions &&
-          dragStartInfo.current.groupInitialPositions.length > 1
-        ) {
-          const targetCurrentX =
-            ((pendingPointer.current.clientX - rect.left) / rect.width) * 100 -
-            dragStartInfo.current.offsetX;
-          const targetCurrentY =
-            ((pendingPointer.current.clientY - rect.top) / rect.height) * 100 -
-            dragStartInfo.current.offsetY;
-
-          const deltaXPercent = targetCurrentX - dragStartInfo.current.startPosX;
-          const deltaYPercent = targetCurrentY - dragStartInfo.current.startPosY;
-
-          const groupInits = dragStartInfo.current.groupInitialPositions;
-          setLocalTables((prev) =>
-            prev.map((t) => {
-              const init = groupInits.find((g) => g.id === t.id);
-              if (!init) return t;
-              let nextX = Math.max(5, Math.min(95, init.posX + deltaXPercent));
-              let nextY = Math.max(5, Math.min(95, init.posY + deltaYPercent));
-              if (snapToGrid) {
-                nextX = Math.round(nextX / 2.5) * 2.5;
-                nextY = Math.round(nextY / 2.5) * 2.5;
-              }
-              return {
-                ...t,
-                posX: Math.round(nextX * 10) / 10,
-                posY: Math.round(nextY * 10) / 10,
-              };
-            })
-          );
-          return;
-        }
-
-        // 2. Single table drag
-        let x =
-          ((pendingPointer.current.clientX - rect.left) / rect.width) * 100 -
-          dragStartInfo.current.offsetX;
-        let y =
-          ((pendingPointer.current.clientY - rect.top) / rect.height) * 100 -
-          dragStartInfo.current.offsetY;
+        let x = ((pendingPointer.current.clientX - rect.left) / rect.width) * 100 - dragStartInfo.current.offsetX;
+        let y = ((pendingPointer.current.clientY - rect.top) / rect.height) * 100 - dragStartInfo.current.offsetY;
 
         // Clamp inside canvas boundary
         x = Math.max(5, Math.min(95, x));
@@ -316,17 +263,13 @@ export default function StaffFloorPlanView({
 
         const targetId = dragStartInfo.current.tableId;
         setLocalTables((prev) =>
-          prev.map((t) =>
-            t.id === targetId
-              ? { ...t, posX: Math.round(x * 10) / 10, posY: Math.round(y * 10) / 10 }
-              : t
-          )
+          prev.map((t) => (t.id === targetId ? { ...t, posX: Math.round(x * 10) / 10, posY: Math.round(y * 10) / 10 } : t))
         );
       });
     }
   };
 
-  // Handle pointer up: discriminate click vs hold/drag (tables move only in design mode)
+  // Handle pointer up: discriminate click (open modal) vs hold/drag (move table)
   const handleTablePointerUp = async (e: React.PointerEvent, table: RestaurantTableData) => {
     e.stopPropagation();
     const targetEl = e.currentTarget as HTMLElement;
@@ -349,96 +292,42 @@ export default function StaffFloorPlanView({
     setDraggingTableId(null);
     setIsHoldingTableId(null);
 
-    const isShiftClick = e.shiftKey;
-    const isCtrlClick = e.ctrlKey || e.metaKey;
-
-    // A) If Shift+Click: Toggle table in multi-selection!
-    if (isShiftClick) {
-      setSelectedTableIds((prev) => {
-        const isAlreadySelected = prev.includes(table.id);
-        const next = isAlreadySelected ? prev.filter((id) => id !== table.id) : [...prev, table.id];
-        if (next.length > 0) {
-          const lastId = next[next.length - 1];
-          setSelectedCanvasItem({ type: 'table', id: lastId });
-          const lastTable = localTables.find((t) => t.id === lastId);
-          if (lastTable) setSelectedTableForInspector(lastTable);
-        } else {
-          setSelectedCanvasItem(null);
-          setSelectedTableForInspector(null);
-        }
-        return next;
-      });
-      return;
-    }
-
     if (!info) return;
 
     const elapsedTime = Date.now() - info.startTime;
-    const isHoldOrDrag = isDesignMode && (info.hasMoved || info.isHolding || elapsedTime >= 220);
+    const isHoldOrDrag = info.hasMoved || info.isHolding || elapsedTime >= 220;
 
     if (isHoldOrDrag) {
-      // It was a HOLD or DRAG in Design Mode: DO NOT OPEN ANY MODAL
+      // It was a HOLD or DRAG: DO NOT OPEN THE MODAL!
       if (info.hasMoved) {
-        if (info.groupInitialPositions && info.groupInitialPositions.length > 1) {
-          // Persist ALL tables in group to database
-          const movedGroup = localTables.filter((t) =>
-            info.groupInitialPositions!.some((g) => g.id === t.id)
-          );
-          await Promise.all(
-            movedGroup.map((movedTable) =>
-              saveRestaurantTableAction({
-                id: movedTable.id,
-                tableNumber: movedTable.tableNumber,
-                name: movedTable.name,
-                zone: movedTable.zone,
-                seats: movedTable.seats,
-                shape: movedTable.shape,
-                color: movedTable.color || undefined,
-                posX: movedTable.posX,
-                posY: movedTable.posY,
-              })
-            )
-          );
+        // Persist new position to database
+        const movedTable = localTables.find((t) => t.id === info.tableId);
+        if (movedTable) {
+          await saveRestaurantTableAction({
+            id: movedTable.id,
+            tableNumber: movedTable.tableNumber,
+            name: movedTable.name,
+            zone: movedTable.zone,
+            seats: movedTable.seats,
+            shape: movedTable.shape,
+            color: movedTable.color || undefined,
+            posX: movedTable.posX,
+            posY: movedTable.posY,
+          });
           onRefreshData();
-        } else {
-          // Persist single moved table to database
-          const movedTable = localTables.find((t) => t.id === info.tableId);
-          if (movedTable) {
-            await saveRestaurantTableAction({
-              id: movedTable.id,
-              tableNumber: movedTable.tableNumber,
-              name: movedTable.name,
-              zone: movedTable.zone,
-              seats: movedTable.seats,
-              shape: movedTable.shape,
-              color: movedTable.color || undefined,
-              posX: movedTable.posX,
-              posY: movedTable.posY,
-            });
-            onRefreshData();
-          }
         }
       }
-      setSelectedCanvasItem({ type: 'table', id: table.id });
-      setSelectedTableForInspector(table);
+      // If only held in place without moving, do nothing (no modal, just released)
     } else {
-      // It was a CLICK without Shift:
+      // It was a CLEAN CLICK (< 220ms and no drag):
       setSelectedCanvasItem({ type: 'table', id: table.id });
-
-      if (isCtrlClick) {
-        // Ctrl + Click: Opens the Table Action Popover with all execution options!
-        setSelectedTableIds([table.id]);
-        setActivePopoverTable(table);
-      } else if (isDesignMode) {
-        // Clean Click in Design Mode: Select single table for inspector
-        setSelectedTableIds([table.id]);
+      if (isDesignMode) {
         setSelectedTableForInspector(table);
         setSidebarTab('inspector');
         setIsSidebarOpen(true);
       } else {
-        // Clean Click outside Design Mode: Directly takes order!
-        setSelectedTableIds([table.id]);
-        handleTakeOrder(table);
+        // Open the Table Action Popover!
+        setActivePopoverTable(table);
       }
     }
   };
@@ -775,8 +664,6 @@ export default function StaffFloorPlanView({
           return;
         }
         setSelectedCanvasItem(null);
-        setSelectedTableForInspector(null);
-        setSelectedTableIds([]);
         return;
       }
 
@@ -802,32 +689,29 @@ export default function StaffFloorPlanView({
         if (targetTable) {
           setSelectedCanvasItem({ type: 'table', id: targetTable.id });
           setSelectedTableForInspector(targetTable);
-          setSelectedTableIds([targetTable.id]);
         }
         return;
       }
 
-      // 5. Enter or Space: Take Order (or Ctrl+Enter for Popover)
+      // 5. Enter or Space: Open Table Options Popover
       if (e.key === 'Enter' || e.key === ' ') {
         if (selectedCanvasItem?.type === 'table') {
           const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
           if (targetTable) {
             e.preventDefault();
-            if (e.ctrlKey || e.metaKey) {
-              setActivePopoverTable(targetTable);
-            } else if (isDesignMode) {
+            if (isDesignMode) {
               setSelectedTableForInspector(targetTable);
               setSidebarTab('inspector');
               setIsSidebarOpen(true);
             } else {
-              handleTakeOrder(targetTable);
+              setActivePopoverTable(targetTable);
             }
           }
         }
         return;
       }
 
-      // 6. Arrow Keys: Move selected table(s) or zone
+      // 6. Arrow Keys: Move selected table or zone
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
 
@@ -836,47 +720,30 @@ export default function StaffFloorPlanView({
         const dx = e.key === 'ArrowRight' ? step : e.key === 'ArrowLeft' ? -step : 0;
         const dy = e.key === 'ArrowDown' ? step : e.key === 'ArrowUp' ? -step : 0;
 
-        // A) Moving TABLES: strictly permitted ONLY in Design Mode!
-        if (selectedTableIds.length > 0 || selectedCanvasItem?.type === 'table') {
-          if (!isDesignMode) return; // Tables can only be moved in Design Mode
+        // A) Moving a TABLE
+        if (selectedCanvasItem?.type === 'table') {
+          const tableId = selectedCanvasItem.id;
+          const currentTable = localTables.find((t) => t.id === tableId);
+          if (!currentTable) return;
 
-          const targetIds =
-            selectedTableIds.length > 0
-              ? selectedTableIds
-              : selectedCanvasItem?.type === 'table'
-              ? [selectedCanvasItem.id]
-              : [];
+          const nextX = Math.round(Math.max(5, Math.min(95, currentTable.posX + dx)) * 10) / 10;
+          const nextY = Math.round(Math.max(5, Math.min(95, currentTable.posY + dy)) * 10) / 10;
 
-          if (targetIds.length > 0) {
-            const movedList: RestaurantTableData[] = [];
-            setLocalTables((prev) =>
-              prev.map((t) => {
-                if (!targetIds.includes(t.id)) return t;
-                const nextX = Math.round(Math.max(5, Math.min(95, t.posX + dx)) * 10) / 10;
-                const nextY = Math.round(Math.max(5, Math.min(95, t.posY + dy)) * 10) / 10;
-                const updated = { ...t, posX: nextX, posY: nextY };
-                movedList.push(updated);
-                return updated;
-              })
-            );
+          const updated = { ...currentTable, posX: nextX, posY: nextY };
+          setLocalTables((prev) => prev.map((t) => (t.id === tableId ? updated : t)));
 
-            Promise.all(
-              movedList.map((t) =>
-                saveRestaurantTableAction({
-                  id: t.id,
-                  tableNumber: t.tableNumber,
-                  name: t.name,
-                  zone: t.zone,
-                  seats: t.seats,
-                  shape: t.shape,
-                  color: t.color || undefined,
-                  posX: t.posX,
-                  posY: t.posY,
-                })
-              )
-            ).then(() => onRefreshData());
-            return;
-          }
+          saveRestaurantTableAction({
+            id: updated.id,
+            tableNumber: updated.tableNumber,
+            name: updated.name,
+            zone: updated.zone,
+            seats: updated.seats,
+            shape: updated.shape,
+            color: updated.color || undefined,
+            posX: updated.posX,
+            posY: updated.posY,
+          }).then(() => onRefreshData());
+          return;
         }
 
         // B) Moving a ZONE
@@ -954,28 +821,14 @@ export default function StaffFloorPlanView({
         return;
       }
 
-      // 9. Delete / Backspace: Remove selected table(s) or zone
+      // 9. Delete / Backspace: Remove selected table or zone
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedTableIds.length > 1) {
-          e.preventDefault();
-          if (confirm(`¿Eliminar las ${selectedTableIds.length} mesas seleccionadas del plano?`)) {
-            const toDelete = localTables.filter((t) => selectedTableIds.includes(t.id));
-            setLocalTables((prev) => prev.filter((t) => !selectedTableIds.includes(t.id)));
-            setSelectedTableIds([]);
-            setSelectedCanvasItem(null);
-            setSelectedTableForInspector(null);
-            Promise.all(toDelete.map((t) => deleteRestaurantTableAction(t.id))).then(() => onRefreshData());
-          }
-          return;
-        }
-
         if (selectedCanvasItem?.type === 'table') {
           const targetTable = localTables.find((t) => t.id === selectedCanvasItem.id);
           if (targetTable) {
             e.preventDefault();
             if (confirm(`¿Eliminar la mesa "${targetTable.name}" del plano?`)) {
               handleDeleteTableFromToolbar(targetTable);
-              setSelectedTableIds([]);
             }
           }
           return;
@@ -1000,7 +853,6 @@ export default function StaffFloorPlanView({
     localTables,
     zones,
     selectedCanvasItem,
-    selectedTableIds,
     isDesignMode,
     snapToGrid,
     isShortcutsModalOpen,
@@ -1022,42 +874,57 @@ export default function StaffFloorPlanView({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col space-y-2">
-      {/* Floor Plan Control Banner */}
+      {/* Floor Plan Control Banner (Unificada y Compacta) */}
       <div className="shrink-0 bg-white py-1.5 px-3 sm:px-4 rounded-xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-2">
-        {/* Metrics Bar */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>{freeTables} Libres</span>
-          </div>
+        {/* Left: View Switcher (Plano 2D vs Kanban + Refresh) */}
+        {onSetOrdersViewMode ? (
+          <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 rounded-xl border border-[#EADBC8]">
+            <button
+              type="button"
+              onClick={() => onSetOrdersViewMode('floor')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                ordersViewMode === 'floor'
+                  ? 'bg-[#9E2A2B] text-white shadow-xs'
+                  : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Plano 2D del Bar</span>
+            </button>
 
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#9E2A2B]/10 border border-[#9E2A2B]/20 text-xs font-bold text-[#9E2A2B]">
-            <span className="w-2 h-2 rounded-full bg-[#9E2A2B] animate-pulse" />
-            <span>{occupiedTables} Ocupadas</span>
-          </div>
+            <button
+              type="button"
+              onClick={() => onSetOrdersViewMode('kanban')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                ordersViewMode === 'kanban'
+                  ? 'bg-[#9E2A2B] text-white shadow-xs'
+                  : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Tablero Kanban ({kanbanOrdersCount ?? orders.length})</span>
+            </button>
 
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-stone-100 text-xs font-semibold text-stone-700">
-            <Users className="w-3.5 h-3.5 text-[#D4A373]" />
-            <span>{totalPaxInService} personas</span>
+            <button
+              type="button"
+              onClick={handleRefreshAll}
+              className="p-1 rounded-lg text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
+              title="Actualizar mesas y comandas"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
           </div>
+        ) : (
+          <div />
+        )}
 
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-50 text-xs font-bold text-amber-900 border border-amber-200">
-            <span>Servicio:</span>
-            <span className="text-[#9E2A2B]">{totalRevenueInService.toFixed(2)}€</span>
-          </div>
-        </div>
-
-        {/* Action Controls */}
+        {/* Right: Action Controls */}
         <div className="flex items-center gap-2">
-          {/* Usage hint pill */}
+          {/* Usage hint pill: click vs hold */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-50 border border-stone-200 text-[11px] text-stone-600 shadow-2xs">
             <span className="font-bold text-[#9E2A2B]">💡 Clic:</span> comanda
             <span className="text-stone-300">·</span>
-            <span className="font-bold text-[#9E2A2B]">Shift+Clic:</span> varias mesas
-            <span className="text-stone-300">·</span>
-            <span className="font-bold text-[#9E2A2B]">Ctrl+Clic:</span> opciones
-            <span className="text-stone-300">·</span>
-            <span className="font-bold text-[#9E2A2B]">Modo Diseño (D):</span> mover
+            <span className="font-bold text-[#9E2A2B]">Sostener:</span> mover mesa
           </div>
 
           {/* Snap grid indicator badge */}
@@ -1159,8 +1026,6 @@ export default function StaffFloorPlanView({
           onClick={() => {
             setSelectedCanvasItem(null);
             setActivePopoverTable(null);
-            setSelectedTableIds([]);
-            setSelectedTableForInspector(null);
           }}
           className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
           style={{
@@ -1168,105 +1033,32 @@ export default function StaffFloorPlanView({
             backgroundSize: '24px 24px',
           }}
         >
-          {/* Floating Multi-Selection Canva Toolbar */}
-          {selectedTableIds.length > 1 && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-[#2B2523] text-white px-3.5 py-1.5 rounded-2xl shadow-2xl border border-[#4A3F3B] flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200 select-none"
-            >
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#FAF8F5]">
-                <Layers className="w-3.5 h-3.5 text-[#D4A373]" />
-                <span className="w-5 h-5 rounded-full bg-[#9E2A2B] text-white text-[10px] flex items-center justify-center font-bold">
-                  {selectedTableIds.length}
-                </span>
-                <span>mesas seleccionadas</span>
-                <span className="text-stone-400 font-normal hidden sm:inline">
-                  (
-                  {localTables
-                    .filter((t) => selectedTableIds.includes(t.id))
-                    .reduce((acc, t) => acc + t.seats, 0)}{' '}
-                  pax)
-                </span>
-              </div>
-
-              <div className="h-4 w-px bg-stone-700" />
-
-              {/* In Design Mode: Bulk Zone Assignment */}
-              {isDesignMode && zones.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-stone-400 hidden md:inline">Mover a:</span>
-                  {zones.map((z) => (
-                    <button
-                      key={z.id}
-                      type="button"
-                      onClick={async () => {
-                        const targets = localTables.filter((t) => selectedTableIds.includes(t.id));
-                        await Promise.all(
-                          targets.map((t) =>
-                            saveRestaurantTableAction({
-                              id: t.id,
-                              tableNumber: t.tableNumber,
-                              name: t.name,
-                              zone: z.code,
-                              seats: t.seats,
-                              shape: t.shape,
-                              color: t.color || undefined,
-                              posX: t.posX,
-                              posY: t.posY,
-                            })
-                          )
-                        );
-                        onRefreshData();
-                      }}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-stone-800 hover:bg-[#9E2A2B] text-stone-200 transition-colors cursor-pointer border border-stone-700"
-                      title={`Asignar todas a ${z.name}`}
-                    >
-                      {z.name.split(' ')[0]}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* In Design Mode: Bulk Delete */}
-              {isDesignMode && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (confirm(`¿Eliminar las ${selectedTableIds.length} mesas seleccionadas?`)) {
-                      const targets = localTables.filter((t) => selectedTableIds.includes(t.id));
-                      setLocalTables((prev) => prev.filter((t) => !selectedTableIds.includes(t.id)));
-                      setSelectedTableIds([]);
-                      setSelectedCanvasItem(null);
-                      setSelectedTableForInspector(null);
-                      await Promise.all(targets.map((t) => deleteRestaurantTableAction(t.id)));
-                      onRefreshData();
-                    }
-                  }}
-                  className="p-1 rounded-md text-rose-300 hover:text-white hover:bg-rose-900/60 transition-colors cursor-pointer"
-                  title="Eliminar mesas seleccionadas"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-
-              <div className="h-4 w-px bg-stone-700" />
-
-              {/* Deselect */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTableIds([]);
-                  setSelectedCanvasItem(null);
-                  setSelectedTableForInspector(null);
-                }}
-                className="flex items-center gap-1 text-[11px] text-stone-300 hover:text-white cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-stone-800 transition-colors"
-                title="Deseleccionar todas (Esc)"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Deseleccionar</span>
-              </button>
+          {/* Live Floor Metrics in Top-Left Corner (Sin fondo ni marco, ordenadas verticalmente) */}
+          <div className="absolute top-3 left-4 z-20 pointer-events-none select-none flex flex-col gap-1.5">
+            {/* 1. Libres */}
+            <div className="flex items-center gap-2 text-xs font-bold text-stone-800 tracking-tight">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-2xs" />
+              <span>{freeTables} Libres</span>
             </div>
-          )}
+
+            {/* 2. Ocupadas */}
+            <div className="flex items-center gap-2 text-xs font-bold text-[#9E2A2B] tracking-tight">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#9E2A2B] shrink-0 animate-pulse" />
+              <span>{occupiedTables} Ocupadas</span>
+            </div>
+
+            {/* 3. Personas */}
+            <div className="flex items-center gap-2 text-xs font-semibold text-stone-600 tracking-tight">
+              <Users className="w-3.5 h-3.5 text-[#D4A373] shrink-0" />
+              <span>{totalPaxInService} personas</span>
+            </div>
+
+            {/* 4. Servicio */}
+            <div className="flex items-center gap-2 text-xs font-bold text-stone-800 tracking-tight">
+              <span className="text-[#9E2A2B] text-xs font-black leading-none">€</span>
+              <span>Servicio: <span className="text-[#9E2A2B] font-extrabold">{totalRevenueInService.toFixed(2)}€</span></span>
+            </div>
+          </div>
 
           {/* Canva-Style Floating Contextual Toolbar for Selected Item */}
           <StaffCanvasItemToolbar
@@ -1276,7 +1068,7 @@ export default function StaffFloorPlanView({
                     const z = zones.find((item) => item.id === selectedCanvasItem.id);
                     return z ? { type: 'zone', zone: z } : null;
                   })()
-                : selectedCanvasItem?.type === 'table' && selectedTableIds.length <= 1
+                : selectedCanvasItem?.type === 'table'
                 ? (() => {
                     const t = localTables.find((item) => item.id === selectedCanvasItem.id);
                     return t ? { type: 'table', table: t } : null;
@@ -1292,10 +1084,7 @@ export default function StaffFloorPlanView({
             onUpdateTable={handleUpdateTableFromToolbar}
             onDeleteTable={handleDeleteTableFromToolbar}
             onOpenTableOrder={(table) => onSelectTable(table)}
-            onDeselect={() => {
-              setSelectedCanvasItem(null);
-              setSelectedTableIds([]);
-            }}
+            onDeselect={() => setSelectedCanvasItem(null)}
           />
 
           {/* Dynamic Delimited Zones with Direct Interactive Resize Handles */}
@@ -1328,7 +1117,7 @@ export default function StaffFloorPlanView({
                 }`}
               >
                 {/* Zone Header with title and Drag/Move handle */}
-                <div className="flex items-center justify-between gap-1">
+                <div className={`flex items-center justify-between gap-1 ${zone.posX <= 5 && zone.posY <= 5 ? 'pl-28' : ''}`}>
                   <div
                     className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider"
                     style={{ color: zone.color }}
@@ -1407,14 +1196,10 @@ export default function StaffFloorPlanView({
             const isPending = order?.status === 'PENDING';
             const isPreparing = order?.status === 'PREPARING';
             const isServed = order?.status === 'SERVED';
-            const isSelectedInMulti = selectedTableIds.includes(table.id);
+            const isBeingDragged = draggingTableId === table.id;
             const isSelected =
               selectedTableForInspector?.id === table.id ||
-              (selectedCanvasItem?.type === 'table' && selectedCanvasItem.id === table.id) ||
-              isSelectedInMulti;
-            const isBeingDragged =
-              draggingTableId === table.id ||
-              (draggingTableId !== null && isSelectedInMulti && selectedTableIds.includes(draggingTableId));
+              (selectedCanvasItem?.type === 'table' && selectedCanvasItem.id === table.id);
 
             // Shape styles
             let shapeClasses = 'rounded-full w-18 h-18 sm:w-20 sm:h-20';
@@ -1460,22 +1245,11 @@ export default function StaffFloorPlanView({
                 className={`absolute select-none transition-[box-shadow,transform] duration-150 ${
                   isBeingDragged || isHoldingTableId === table.id
                     ? 'z-40 scale-105 cursor-grabbing shadow-2xl ring-4 ring-[#9E2A2B]'
-                    : isSelectedInMulti && selectedTableIds.length > 1
-                    ? 'z-35 ring-4 ring-[#9E2A2B] ring-offset-2 ring-offset-white shadow-2xl scale-102'
                     : isSelected
                     ? 'z-30 ring-3 ring-[#9E2A2B] shadow-xl'
-                    : isDesignMode
-                    ? 'z-20 cursor-grab hover:scale-102'
-                    : 'z-20 cursor-pointer hover:scale-102'
+                    : 'z-20 cursor-pointer'
                 }`}
               >
-                {/* Multi-selection order indicator badge */}
-                {isSelectedInMulti && (
-                  <div className="absolute -top-2.5 -left-2.5 w-5 h-5 rounded-full bg-[#9E2A2B] text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white z-50 animate-in zoom-in-75 duration-150">
-                    {selectedTableIds.length > 1 ? selectedTableIds.indexOf(table.id) + 1 : '✓'}
-                  </div>
-                )}
-
                 {/* Floating moving badge while holding / dragging */}
                 {(isBeingDragged || isHoldingTableId === table.id) && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[#9E2A2B] text-white text-[9px] font-bold rounded-full shadow-lg flex items-center gap-1 whitespace-nowrap z-50 pointer-events-none animate-bounce">

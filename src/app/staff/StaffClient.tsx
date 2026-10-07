@@ -703,59 +703,6 @@ export default function StaffClient({
         {activeTab === 'orders' && (
           /* General Floor Plan & Orders Suite */
           <div className="flex-1 min-h-0 flex flex-col space-y-2">
-            {/* Top Toolbar */}
-            <div className="shrink-0 bg-white py-2 px-3 sm:px-4 rounded-xl border border-[#EADBC8] shadow-xs flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-serif text-base sm:text-lg font-bold text-[#2B2523] flex items-center gap-2">
-                  <span>Gestión de Sala, Mesas & Comandas</span>
-                  <span className="text-[10px] font-sans font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    En Directo
-                  </span>
-                </h3>
-                <p className="text-[11px] text-[#6E6259]">
-                  Plano 2D del bar en Camas, asignación de pedidos en mesa con PDA y tablero kanban.
-                </p>
-              </div>
-
-              {/* View Switcher: Plano 2D vs Kanban */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 rounded-xl border border-[#EADBC8]">
-                <button
-                  type="button"
-                  onClick={() => setOrdersViewMode('floor')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    ordersViewMode === 'floor'
-                      ? 'bg-[#9E2A2B] text-white shadow-xs'
-                      : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
-                  }`}
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>Plano 2D del Bar</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setOrdersViewMode('kanban')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    ordersViewMode === 'kanban'
-                      ? 'bg-[#9E2A2B] text-white shadow-xs'
-                      : 'text-stone-600 hover:text-[#2B2523] hover:bg-white'
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>Tablero Kanban ({activeOrdersList.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={loadTablesAndOrders}
-                  className="p-1.5 rounded-lg text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
-                  title="Actualizar mesas y comandas"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
             {/* View Mode Rendering */}
             <div className="flex-1 min-h-0 flex flex-col">
               {ordersViewMode === 'floor' ? (
@@ -766,15 +713,52 @@ export default function StaffClient({
                   onRefreshData={loadTablesAndOrders}
                   products={products}
                   categories={initialCategories}
+                  ordersViewMode={ordersViewMode}
+                  onSetOrdersViewMode={setOrdersViewMode}
+                  kanbanOrdersCount={activeOrdersList.length}
                 />
               ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  <StaffOrdersKanbanView
-                    orders={activeOrdersList}
-                    tables={restaurantTables}
-                    onOpenPda={(table) => setSelectedTableForPda(table)}
-                    onRefreshData={loadTablesAndOrders}
-                  />
+                <div className="flex-1 min-h-0 flex flex-col space-y-2">
+                  {/* Kanban View Top Header with Switcher */}
+                  <div className="shrink-0 bg-white py-1.5 px-3 sm:px-4 rounded-xl border border-[#EADBC8] shadow-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 rounded-xl border border-[#EADBC8]">
+                      <button
+                        type="button"
+                        onClick={() => setOrdersViewMode('floor')}
+                        className="px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer text-stone-600 hover:text-[#2B2523] hover:bg-white"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span>Plano 2D del Bar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOrdersViewMode('kanban')}
+                        className="px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-[#9E2A2B] text-white shadow-xs"
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span>Tablero Kanban ({activeOrdersList.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={loadTablesAndOrders}
+                        className="p-1 rounded-lg text-stone-400 hover:text-[#2B2523] hover:bg-white transition-colors cursor-pointer"
+                        title="Actualizar mesas y comandas"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <StaffOrdersKanbanView
+                      orders={activeOrdersList}
+                      tables={restaurantTables}
+                      onOpenPda={(table) => setSelectedTableForPda(table)}
+                      onRefreshData={loadTablesAndOrders}
+                    />
+                  </div>
                 </div>
               )}
             </div>
