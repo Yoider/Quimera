@@ -1,26 +1,24 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   RestaurantTableData,
+  RestaurantZoneData,
   ActiveOrderData,
   saveRestaurantTableAction,
-  deleteRestaurantTableAction,
+  getRestaurantZonesAction,
 } from './orderActions';
+import StaffFloorPlanRightSidebar from './StaffFloorPlanRightSidebar';
 import {
-  LayoutGrid,
-  Edit3,
-  Check,
-  Plus,
-  Trash2,
   Users,
-  ChefHat,
-  Clock,
-  Sparkles,
   Beer,
   Sun,
   UtensilsCrossed,
+  Sliders,
+  Check,
+  Edit3,
   Move,
+  Grid,
 } from 'lucide-react';
 
 interface StaffFloorPlanViewProps {
@@ -37,23 +35,57 @@ export default function StaffFloorPlanView({
   onRefreshData,
 }: StaffFloorPlanViewProps) {
   const [isDesignMode, setIsDesignMode] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+  const [selectedTableForInspector, setSelectedTableForInspector] = useState<RestaurantTableData | null>(null);
+
+  // Local optimistic tables state for 60fps/120fps fluid movement
+  const [localTables, setLocalTables] = useState<RestaurantTableData[]>(tables);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
-  const [isNewTableModalOpen, setIsNewTableModalOpen] = useState<boolean>(false);
-  const [newTableData, setNewTableData] = useState<{
-    tableNumber: string;
-    name: string;
-    zone: 'SALON' | 'BARRA' | 'TERRAZA';
-    seats: number;
-    shape: 'ROUND' | 'SQUARE' | 'RECTANGLE' | 'BAR_STOOL';
-    color: string;
-  }>({
-    tableNumber: '',
-    name: '',
-    zone: 'SALON',
-    seats: 4,
-    shape: 'ROUND',
-    color: '#9E2A2B',
-  });
+
+  // Dynamic Zones state
+  const [zones, setZones] = useState<RestaurantZoneData[]>([]);
+
+  // Canvas and RAF dragging refs
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const rafId = useRef<number | null>(null);
+  const pendingPointer = useRef<{ clientX: number; clientY: number } | null>(null);
+  const dragStartInfo = useRef<{
+    tableId: string;
+    startClientX: number;
+    startClientY: number;
+    startPosX: number;
+    startPosY: number;
+    offsetX: number;
+    offsetY: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  // Sync local tables when parent tables change and user is not actively dragging
+  useEffect(() => {
+    if (!draggingTableId) {
+      setLocalTables(tables);
+    }
+  }, [tables, draggingTableId]);
+
+  // Load Zones from DB
+  const loadZones = useCallback(async () => {
+    const loaded = await getRestaurantZonesAction();
+    setZones(loaded);
+  }, []);
+
+  useEffect(() => {
+    loadZones();
+  }, [loadZones]);
+
+  // Clean up RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+      }
+    };
+  }, []);
 
   // Map orders by tableNumber
   const ordersByTable = new Map<string, ActiveOrderData>();
@@ -61,74 +93,137 @@ export default function StaffFloorPlanView({
     ordersByTable.set(o.tableNumber, o);
   });
 
-  // Handle drag on canvas
-  const handleCanvasClick = async (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDesignMode || !draggingTableId) return;
+  // Handle pointer down on a table: initiate high-performance drag
+  const handleTablePointerDown = (e: React.PointerEvent, table: RestaurantTableData) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100));
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.setPointerCapture(e.pointerId);
+    } catch (_) {}
 
-    const targetTable = tables.find((t) => t.id === draggingTableId);
-    if (targetTable) {
-      await saveRestaurantTableAction({
-        id: targetTable.id,
-        tableNumber: targetTable.tableNumber,
-        name: targetTable.name,
-        zone: targetTable.zone,
-        seats: targetTable.seats,
-        shape: targetTable.shape,
-        color: targetTable.color || undefined,
-        posX: Math.round(x),
-        posY: Math.round(y),
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    let offsetX = 0;
+    let offsetY = 0;
+    if (canvasRect) {
+      const clickXPercent = ((e.clientX - canvasRect.left) / canvasRect.width) * 100;
+      const clickYPercent = ((e.clientY - canvasRect.top) / canvasRect.height) * 100;
+      offsetX = clickXPercent - table.posX;
+      offsetY = clickYPercent - table.posY;
+    }
+
+    dragStartInfo.current = {
+      tableId: table.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPosX: table.posX,
+      startPosY: table.posY,
+      offsetX,
+      offsetY,
+      hasMoved: false,
+    };
+
+    setDraggingTableId(table.id);
+  };
+
+  // Handle pointer move: 60fps / 120fps requestAnimationFrame calculation
+  const handleTablePointerMove = (e: React.PointerEvent) => {
+    if (!dragStartInfo.current) return;
+
+    const deltaX = Math.abs(e.clientX - dragStartInfo.current.startClientX);
+    const deltaY = Math.abs(e.clientY - dragStartInfo.current.startClientY);
+
+    if (deltaX > 2 || deltaY > 2) {
+      dragStartInfo.current.hasMoved = true;
+    }
+
+    if (!dragStartInfo.current.hasMoved) return;
+
+    pendingPointer.current = { clientX: e.clientX, clientY: e.clientY };
+
+    if (rafId.current === null) {
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (!pendingPointer.current || !canvasRef.current || !dragStartInfo.current) return;
+
+        const rect = canvasRef.current.getBoundingClientRect();
+        let x = ((pendingPointer.current.clientX - rect.left) / rect.width) * 100 - dragStartInfo.current.offsetX;
+        let y = ((pendingPointer.current.clientY - rect.top) / rect.height) * 100 - dragStartInfo.current.offsetY;
+
+        // Clamp inside canvas boundary
+        x = Math.max(5, Math.min(95, x));
+        y = Math.max(5, Math.min(95, y));
+
+        // Snap to grid if enabled (2.5% steps for precision alignment)
+        if (snapToGrid) {
+          x = Math.round(x / 2.5) * 2.5;
+          y = Math.round(y / 2.5) * 2.5;
+        }
+
+        const targetId = dragStartInfo.current.tableId;
+        setLocalTables((prev) =>
+          prev.map((t) => (t.id === targetId ? { ...t, posX: Math.round(x * 10) / 10, posY: Math.round(y * 10) / 10 } : t))
+        );
       });
-      setDraggingTableId(null);
-      onRefreshData();
     }
   };
 
-  // Add new table
-  const handleCreateNewTable = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTableData.tableNumber.trim()) return;
+  // Handle pointer up: finalize position or trigger selection/PDA
+  const handleTablePointerUp = async (e: React.PointerEvent, table: RestaurantTableData) => {
+    const targetEl = e.currentTarget as HTMLElement;
+    try {
+      targetEl.releasePointerCapture(e.pointerId);
+    } catch (_) {}
 
-    await saveRestaurantTableAction({
-      tableNumber: newTableData.tableNumber.trim(),
-      name: newTableData.name.trim() || newTableData.tableNumber.trim(),
-      zone: newTableData.zone,
-      seats: newTableData.seats,
-      shape: newTableData.shape,
-      color: newTableData.color,
-      posX: newTableData.zone === 'BARRA' ? 25 : newTableData.zone === 'TERRAZA' ? 75 : 35,
-      posY: 50,
-    });
+    const info = dragStartInfo.current;
+    dragStartInfo.current = null;
+    setDraggingTableId(null);
 
-    setIsNewTableModalOpen(false);
-    setNewTableData({
-      tableNumber: '',
-      name: '',
-      zone: 'SALON',
-      seats: 4,
-      shape: 'ROUND',
-      color: '#9E2A2B',
-    });
-    onRefreshData();
-  };
+    if (rafId.current !== null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
 
-  // Delete table
-  const handleDeleteTable = async (id: string, name: string) => {
-    if (confirm(`¿Eliminar la mesa "${name}" del plano?`)) {
-      await deleteRestaurantTableAction(id);
-      onRefreshData();
+    if (info && info.hasMoved) {
+      // It was a drag: persist new position to database
+      const movedTable = localTables.find((t) => t.id === info.tableId);
+      if (movedTable) {
+        await saveRestaurantTableAction({
+          id: movedTable.id,
+          tableNumber: movedTable.tableNumber,
+          name: movedTable.name,
+          zone: movedTable.zone,
+          seats: movedTable.seats,
+          shape: movedTable.shape,
+          color: movedTable.color || undefined,
+          posX: movedTable.posX,
+          posY: movedTable.posY,
+        });
+        onRefreshData();
+      }
+    } else {
+      // It was a tap / click:
+      if (isDesignMode) {
+        setSelectedTableForInspector(table);
+        setIsSidebarOpen(true);
+      } else {
+        onSelectTable(table);
+      }
     }
   };
 
   // Summary counts
-  const totalTables = tables.length;
-  const occupiedTables = tables.filter((t) => ordersByTable.has(t.tableNumber)).length;
+  const totalTables = localTables.length;
+  const occupiedTables = localTables.filter((t) => ordersByTable.has(t.tableNumber)).length;
   const freeTables = totalTables - occupiedTables;
   const totalPaxInService = orders.reduce((acc, o) => acc + (o.pax || 2), 0);
   const totalRevenueInService = orders.reduce((acc, o) => acc + o.totalAmount, 0);
+
+  const handleRefreshAll = () => {
+    loadZones();
+    onRefreshData();
+  };
 
   return (
     <div className="flex-1 min-h-0 flex flex-col space-y-2">
@@ -157,22 +252,39 @@ export default function StaffFloorPlanView({
           </div>
         </div>
 
-        {/* Mode & Actions */}
+        {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {isDesignMode && (
-            <button
-              onClick={() => setIsNewTableModalOpen(true)}
-              className="px-2.5 py-1 rounded-lg bg-white border border-[#EADBC8] hover:bg-stone-50 text-[#2B2523] text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 text-[#9E2A2B]" />
-              <span>Añadir Mesa</span>
-            </button>
+          {/* Snap grid indicator badge */}
+          {snapToGrid && (
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 text-[10.5px] font-semibold text-stone-600 border border-stone-200">
+              <Grid className="w-3 h-3 text-[#D4A373]" />
+              <span>Snap 2.5%</span>
+            </span>
           )}
 
+          {/* Toggle Sidebar Button */}
           <button
+            type="button"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+              isSidebarOpen
+                ? 'bg-[#9E2A2B]/10 text-[#9E2A2B] border border-[#9E2A2B]/30'
+                : 'bg-white hover:bg-stone-50 text-stone-700 border border-stone-200'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5 text-[#9E2A2B]" />
+            <span className="hidden sm:inline">
+              {isSidebarOpen ? 'Ocultar Herramientas' : 'Herramientas 2D'}
+            </span>
+          </button>
+
+          {/* Toggle Design Mode */}
+          <button
+            type="button"
             onClick={() => {
-              setIsDesignMode(!isDesignMode);
-              setDraggingTableId(null);
+              const nextMode = !isDesignMode;
+              setIsDesignMode(nextMode);
+              if (nextMode) setIsSidebarOpen(true);
             }}
             className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
               isDesignMode
@@ -188,298 +300,181 @@ export default function StaffFloorPlanView({
             ) : (
               <>
                 <Edit3 className="w-3.5 h-3.5 text-[#9E2A2B]" />
-                <span>Modo Diseño / Mover</span>
+                <span>Modo Diseño</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {isDesignMode && (
-        <div className="shrink-0 p-2 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 flex items-center gap-2 animate-in fade-in">
-          <Move className="w-3.5 h-3.5 text-[#9E2A2B] shrink-0" />
-          <span>
-            <strong>Modo Diseño Activo:</strong> Haz clic en el botón de mover (<Move className="w-3 h-3 inline text-[#9E2A2B]" />) de cualquier mesa y luego en su nueva posición en el plano.
-          </span>
-        </div>
-      )}
-
-      {/* 2D Interactive Floor Canvas */}
-      <div
-        onClick={handleCanvasClick}
-        className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
-        style={{
-          backgroundImage: 'radial-gradient(#D4A373 0.75px, transparent 0.75px)',
-          backgroundSize: '24px 24px',
-        }}
-      >
-        {/* Zone Markers / Architecture Guides */}
-        {/* Zone: BARRA (Top-Left) */}
-        <div className="absolute top-2.5 left-2.5 w-[48%] h-[38%] rounded-2xl border-2 border-dashed border-[#D4A373]/50 bg-amber-100/10 p-2 pointer-events-none flex flex-col justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#D4A373]">
-            <Beer className="w-3.5 h-3.5" />
-            <span>Zona 1: Barra de Tapeo & Bebidas</span>
-          </div>
-          <span className="text-[10px] text-stone-400">Mostrador & Taburetes</span>
-        </div>
-
-        {/* Zone: SALÓN COMEDOR (Bottom-Left) */}
-        <div className="absolute bottom-2.5 left-2.5 w-[48%] h-[55%] rounded-2xl border-2 border-dashed border-[#9E2A2B]/30 bg-rose-50/10 p-2 pointer-events-none flex flex-col justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#9E2A2B]">
-            <UtensilsCrossed className="w-3.5 h-3.5" />
-            <span>Zona 2: Salón Comedor Interior</span>
-          </div>
-          <span className="text-[10px] text-stone-400">Mesas Bajas & Comedor</span>
-        </div>
-
-        {/* Zone: TERRAZA (Right Column) */}
-        <div className="absolute top-2.5 bottom-2.5 right-2.5 w-[47%] rounded-2xl border-2 border-dashed border-[#2A9D8F]/40 bg-emerald-50/15 p-2 pointer-events-none flex flex-col justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider text-[#2A9D8F]">
-            <Sun className="w-3.5 h-3.5" />
-            <span>Zona 3: Terraza & Veladores (Exterior)</span>
-          </div>
-          <span className="text-[10px] text-stone-400">Exterior Climatizado Camas</span>
-        </div>
-
-        {/* Render Tables in 2D */}
-        {tables.map((table) => {
-          const order = ordersByTable.get(table.tableNumber);
-          const isOccupied = !!order;
-          const isPending = order?.status === 'PENDING';
-          const isPreparing = order?.status === 'PREPARING';
-          const isServed = order?.status === 'SERVED';
-          const isBeingMoved = draggingTableId === table.id;
-
-          // Shape styles
-          let shapeClasses = 'rounded-full w-18 h-18 sm:w-20 sm:h-20';
-          if (table.shape === 'SQUARE') {
-            shapeClasses = 'rounded-2xl w-18 h-18 sm:w-20 sm:h-20';
-          } else if (table.shape === 'RECTANGLE') {
-            shapeClasses = 'rounded-2xl w-24 h-15 sm:w-28 sm:h-17';
-          } else if (table.shape === 'BAR_STOOL') {
-            shapeClasses = 'rounded-full w-16 h-16 sm:w-18 sm:h-18';
-          }
-
-          // State colors
-          let statusBorder = 'border-stone-300 bg-white hover:border-[#D4A373]';
-          let statusBadge = 'Libre';
-          let badgeColor = 'bg-stone-100 text-stone-500';
-
-          if (isPending) {
-            statusBorder = 'border-amber-400 bg-amber-50/90 ring-4 ring-amber-200/60 shadow-lg animate-pulse';
-            statusBadge = 'Pidiendo';
-            badgeColor = 'bg-amber-100 text-amber-900 border-amber-300';
-          } else if (isPreparing) {
-            statusBorder = 'border-blue-400 bg-blue-50/90 ring-4 ring-blue-200/60 shadow-lg';
-            statusBadge = 'En Cocina';
-            badgeColor = 'bg-blue-100 text-blue-900 border-blue-300';
-          } else if (isServed) {
-            statusBorder = 'border-emerald-500 bg-emerald-50/90 ring-4 ring-emerald-200/60 shadow-md';
-            statusBadge = 'Servido';
-            badgeColor = 'bg-emerald-100 text-emerald-900 border-emerald-300';
-          }
-
-          return (
-            <div
-              key={table.id}
-              style={{
-                left: `${table.posX}%`,
-                top: `${table.posY}%`,
-                transform: 'translate(-50%, -50%)',
-              }}
-              className={`absolute transition-all ${
-                isBeingMoved ? 'ring-4 ring-[#9E2A2B] z-30 scale-110' : 'z-20'
-              }`}
-            >
-              <div
-                onClick={() => {
-                  if (!isDesignMode) {
-                    onSelectTable(table);
-                  }
-                }}
-                className={`relative border-2 flex flex-col items-center justify-center p-1.5 shadow-md cursor-pointer transition-transform hover:scale-105 ${shapeClasses} ${statusBorder}`}
-              >
-                {/* Table Name */}
-                <span className="font-serif font-bold text-xs sm:text-[13px] text-[#2B2523] px-1 text-center leading-tight whitespace-nowrap">
-                  {table.name}
-                </span>
-
-                {/* Seats / Pax */}
-                <span className="text-[10px] text-[#6E6259] flex items-center gap-0.5 mt-0.5">
-                  <Users className="w-2.5 h-2.5" />
-                  <span>{order?.pax || table.seats}p</span>
-                </span>
-
-                {/* Price tag or Status */}
-                {isOccupied ? (
-                  <span className="text-[10.5px] font-bold text-[#9E2A2B] mt-0.5">
-                    {order.totalAmount.toFixed(2)}€
-                  </span>
-                ) : (
-                  <span className={`text-[8.5px] px-1.5 py-0.2 rounded-full font-semibold border mt-0.5 ${badgeColor}`}>
-                    {statusBadge}
-                  </span>
-                )}
-
-                {/* Design Mode Table Actions */}
-                {isDesignMode && (
-                  <div
-                    className="absolute -top-3 -right-3 flex items-center gap-1 z-30"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setDraggingTableId(isBeingMoved ? null : table.id)}
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white shadow-xs cursor-pointer ${
-                        isBeingMoved ? 'bg-[#9E2A2B] ring-2 ring-white' : 'bg-stone-700 hover:bg-stone-800'
-                      }`}
-                      title="Mover mesa"
-                    >
-                      <Move className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTable(table.id, table.name)}
-                      className="w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-xs cursor-pointer"
-                      title="Eliminar mesa"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* New Table Modal */}
-      {isNewTableModalOpen && (
+      {/* Main Floor Workspace: 2D Canvas + Right Sidebar */}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2.5 overflow-hidden">
+        {/* 2D Interactive Floor Canvas */}
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
-          onClick={() => setIsNewTableModalOpen(false)}
+          ref={canvasRef}
+          onPointerMove={handleTablePointerMove}
+          onPointerUp={(e) => {
+            if (draggingTableId) {
+              const table = localTables.find((t) => t.id === draggingTableId);
+              if (table) handleTablePointerUp(e, table);
+            }
+          }}
+          className="flex-1 min-h-[420px] w-full relative bg-[#FAF8F5] rounded-2xl border-2 border-[#EADBC8] overflow-hidden select-none shadow-inner"
+          style={{
+            backgroundImage: 'radial-gradient(#D4A373 0.75px, transparent 0.75px)',
+            backgroundSize: '24px 24px',
+          }}
         >
-          <div
-            className="w-full max-w-md bg-white rounded-3xl border border-[#EADBC8] shadow-2xl p-6 space-y-4 animate-in zoom-in-95"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-[#EADBC8] pb-3">
-              <h3 className="font-serif font-bold text-base text-[#2B2523]">
-                Añadir Nueva Mesa al Plano
-              </h3>
-              <button
-                onClick={() => setIsNewTableModalOpen(false)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-600"
+          {/* Dynamic Delimited Zones */}
+          {zones.map((zone) => {
+            const isBarra = zone.code === 'BARRA';
+            const isTerraza = zone.code === 'TERRAZA';
+
+            return (
+              <div
+                key={zone.id}
+                style={{
+                  left: `${zone.posX}%`,
+                  top: `${zone.posY}%`,
+                  width: `${zone.width}%`,
+                  height: `${zone.height}%`,
+                  borderColor: `${zone.color}66`,
+                  backgroundColor: `${zone.color}0D`,
+                }}
+                className="absolute rounded-2xl border-2 border-dashed p-2.5 pointer-events-none flex flex-col justify-between transition-all"
               >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateNewTable} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-stone-700 mb-1">
-                  Nombre o Número de Mesa:
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: Mesa 6, Barra 5, Terraza 7..."
-                  value={newTableData.tableNumber}
-                  onChange={(e) =>
-                    setNewTableData({
-                      ...newTableData,
-                      tableNumber: e.target.value,
-                      name: e.target.value,
-                    })
-                  }
-                  className="w-full p-2.5 rounded-xl border border-[#EADBC8] text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">Zona:</label>
-                  <select
-                    value={newTableData.zone}
-                    onChange={(e) =>
-                      setNewTableData({
-                        ...newTableData,
-                        zone: e.target.value as any,
-                      })
-                    }
-                    className="w-full p-2 rounded-xl border border-[#EADBC8]"
-                  >
-                    <option value="SALON">Salón Comedor</option>
-                    <option value="BARRA">Barra Tapeo</option>
-                    <option value="TERRAZA">Terraza Veladores</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-stone-700 mb-1">
-                    Comensales (Pax):
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={newTableData.seats}
-                    onChange={(e) =>
-                      setNewTableData({
-                        ...newTableData,
-                        seats: parseInt(e.target.value) || 2,
-                      })
-                    }
-                    className="w-full p-2 rounded-xl border border-[#EADBC8]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-stone-700 mb-1">Forma 2D:</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['ROUND', 'SQUARE', 'RECTANGLE', 'BAR_STOOL'] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setNewTableData({ ...newTableData, shape: s })}
-                      className={`p-2 rounded-xl border text-[11px] font-semibold text-center ${
-                        newTableData.shape === s
-                          ? 'border-[#9E2A2B] bg-[#9E2A2B] text-white'
-                          : 'border-stone-200 bg-stone-50'
-                      }`}
-                    >
-                      {s === 'ROUND'
-                        ? 'Redonda'
-                        : s === 'SQUARE'
-                        ? 'Cuadrada'
-                        : s === 'RECTANGLE'
-                        ? 'Rectang.'
-                        : 'Taburete'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsNewTableModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#EADBC8] text-stone-600 font-semibold"
+                <div
+                  className="flex items-center gap-1.5 text-xs font-serif font-bold uppercase tracking-wider"
+                  style={{ color: zone.color }}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#9E2A2B] text-white font-bold"
-                >
-                  Crear Mesa
-                </button>
+                  {isBarra ? (
+                    <Beer className="w-3.5 h-3.5" />
+                  ) : isTerraza ? (
+                    <Sun className="w-3.5 h-3.5" />
+                  ) : (
+                    <UtensilsCrossed className="w-3.5 h-3.5" />
+                  )}
+                  <span className="truncate">{zone.name}</span>
+                </div>
+                {zone.subtitle && (
+                  <span className="text-[10px] text-stone-400 truncate">{zone.subtitle}</span>
+                )}
               </div>
-            </form>
-          </div>
+            );
+          })}
+
+          {/* Render Tables in 2D with Smooth Pointer Drag */}
+          {localTables.map((table) => {
+            const order = ordersByTable.get(table.tableNumber);
+            const isOccupied = !!order;
+            const isPending = order?.status === 'PENDING';
+            const isPreparing = order?.status === 'PREPARING';
+            const isServed = order?.status === 'SERVED';
+            const isBeingDragged = draggingTableId === table.id;
+            const isSelected = selectedTableForInspector?.id === table.id;
+
+            // Shape styles
+            let shapeClasses = 'rounded-full w-18 h-18 sm:w-20 sm:h-20';
+            if (table.shape === 'SQUARE') {
+              shapeClasses = 'rounded-2xl w-18 h-18 sm:w-20 sm:h-20';
+            } else if (table.shape === 'RECTANGLE') {
+              shapeClasses = 'rounded-2xl w-24 h-15 sm:w-28 sm:h-17';
+            } else if (table.shape === 'BAR_STOOL') {
+              shapeClasses = 'rounded-full w-16 h-16 sm:w-18 sm:h-18';
+            }
+
+            // State colors
+            let statusBorder = 'border-stone-300 bg-white hover:border-[#D4A373]';
+            let statusBadge = 'Libre';
+            let badgeColor = 'bg-stone-100 text-stone-500';
+
+            if (isPending) {
+              statusBorder = 'border-amber-400 bg-amber-50/90 ring-4 ring-amber-200/60 shadow-lg animate-pulse';
+              statusBadge = 'Pidiendo';
+              badgeColor = 'bg-amber-100 text-amber-900 border-amber-300';
+            } else if (isPreparing) {
+              statusBorder = 'border-blue-400 bg-blue-50/90 ring-4 ring-blue-200/60 shadow-lg';
+              statusBadge = 'En Cocina';
+              badgeColor = 'bg-blue-100 text-blue-900 border-blue-300';
+            } else if (isServed) {
+              statusBorder = 'border-emerald-500 bg-emerald-50/90 ring-4 ring-emerald-200/60 shadow-md';
+              statusBadge = 'Servido';
+              badgeColor = 'bg-emerald-100 text-emerald-900 border-emerald-300';
+            }
+
+            return (
+              <div
+                key={table.id}
+                onPointerDown={(e) => handleTablePointerDown(e, table)}
+                onPointerMove={handleTablePointerMove}
+                onPointerUp={(e) => handleTablePointerUp(e, table)}
+                style={{
+                  left: `${table.posX}%`,
+                  top: `${table.posY}%`,
+                  transform: 'translate(-50%, -50%)',
+                  touchAction: 'none',
+                }}
+                className={`absolute transition-shadow ${
+                  isBeingDragged
+                    ? 'z-40 scale-105 cursor-grabbing shadow-2xl ring-4 ring-[#9E2A2B]/40'
+                    : isSelected
+                    ? 'z-30 ring-3 ring-[#9E2A2B] shadow-xl'
+                    : 'z-20 cursor-grab'
+                }`}
+              >
+                <div
+                  className={`relative border-2 flex flex-col items-center justify-center p-1.5 shadow-md transition-transform hover:scale-102 ${shapeClasses} ${statusBorder}`}
+                >
+                  {/* Table Name */}
+                  <span className="font-serif font-bold text-xs sm:text-[13px] text-[#2B2523] px-1 text-center leading-tight whitespace-nowrap">
+                    {table.name}
+                  </span>
+
+                  {/* Seats / Pax */}
+                  <span className="text-[10px] text-[#6E6259] flex items-center gap-0.5 mt-0.5">
+                    <Users className="w-2.5 h-2.5" />
+                    <span>{order?.pax || table.seats}p</span>
+                  </span>
+
+                  {/* Price tag or Status */}
+                  {isOccupied ? (
+                    <span className="text-[10.5px] font-bold text-[#9E2A2B] mt-0.5">
+                      {order.totalAmount.toFixed(2)}€
+                    </span>
+                  ) : (
+                    <span className={`text-[8.5px] px-1.5 py-0.2 rounded-full font-semibold border mt-0.5 ${badgeColor}`}>
+                      {statusBadge}
+                    </span>
+                  )}
+
+                  {/* Drag indicator in design mode */}
+                  {isDesignMode && (
+                    <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#9E2A2B] text-white flex items-center justify-center shadow-xs">
+                      <Move className="w-2.5 h-2.5" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
+
+        {/* Right Sidebar with 2D Editing Tools */}
+        {isSidebarOpen && (
+          <StaffFloorPlanRightSidebar
+            isDesignMode={isDesignMode}
+            onToggleDesignMode={(active) => setIsDesignMode(active)}
+            tables={localTables}
+            zones={zones}
+            selectedTable={selectedTableForInspector}
+            onSelectTable={(table) => setSelectedTableForInspector(table)}
+            onRefreshData={handleRefreshAll}
+            snapToGrid={snapToGrid}
+            onToggleSnapToGrid={(snap) => setSnapToGrid(snap)}
+            onClose={() => setIsSidebarOpen(false)}
+          />
+        )}
+      </div>
     </div>
   );
 }

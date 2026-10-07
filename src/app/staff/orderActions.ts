@@ -7,12 +7,25 @@ export interface RestaurantTableData {
   id: string;
   tableNumber: string;
   name: string;
-  zone: 'SALON' | 'BARRA' | 'TERRAZA';
+  zone: string; // 'SALON' | 'BARRA' | 'TERRAZA' or custom zone code
   seats: number;
   posX: number; // percentage 0-100
   posY: number; // percentage 0-100
   shape: 'ROUND' | 'SQUARE' | 'RECTANGLE' | 'BAR_STOOL';
   color?: string | null;
+  isActive: boolean;
+}
+
+export interface RestaurantZoneData {
+  id: string;
+  code: string;
+  name: string;
+  subtitle?: string | null;
+  color: string;
+  posX: number; // 0-100%
+  posY: number; // 0-100%
+  width: number; // 0-100%
+  height: number; // 0-100%
   isActive: boolean;
 }
 
@@ -95,7 +108,7 @@ export async function getRestaurantTablesAction(): Promise<RestaurantTableData[]
       id: t.id,
       tableNumber: t.tableNumber,
       name: t.name,
-      zone: t.zone as 'SALON' | 'BARRA' | 'TERRAZA',
+      zone: t.zone,
       seats: t.seats,
       posX: t.posX,
       posY: t.posY,
@@ -116,7 +129,7 @@ export async function saveRestaurantTableAction(data: {
   id?: string;
   tableNumber: string;
   name: string;
-  zone: 'SALON' | 'BARRA' | 'TERRAZA';
+  zone: string;
   seats: number;
   posX: number;
   posY: number;
@@ -163,7 +176,7 @@ export async function saveRestaurantTableAction(data: {
         id: table.id,
         tableNumber: table.tableNumber,
         name: table.name,
-        zone: table.zone as 'SALON' | 'BARRA' | 'TERRAZA',
+        zone: table.zone,
         seats: table.seats,
         posX: table.posX,
         posY: table.posY,
@@ -192,6 +205,185 @@ export async function deleteRestaurantTableAction(id: string): Promise<{ success
   } catch (err) {
     console.error('Error deleting restaurant table:', err);
     return { success: false, error: 'Error al eliminar la mesa.' };
+  }
+}
+
+const DEFAULT_SEEDED_ZONES: Omit<RestaurantZoneData, 'id' | 'isActive'>[] = [
+  {
+    code: 'BARRA',
+    name: 'Zona 1: Barra de Tapeo & Bebidas',
+    subtitle: 'Mostrador & Taburetes',
+    color: '#D4A373',
+    posX: 2.5,
+    posY: 2.5,
+    width: 47.5,
+    height: 38,
+  },
+  {
+    code: 'SALON',
+    name: 'Zona 2: Salón Comedor Interior',
+    subtitle: 'Mesas Bajas & Comedor',
+    color: '#9E2A2B',
+    posX: 2.5,
+    posY: 43.5,
+    width: 47.5,
+    height: 54,
+  },
+  {
+    code: 'TERRAZA',
+    name: 'Zona 3: Terraza & Veladores (Exterior)',
+    subtitle: 'Exterior Climatizado Camas',
+    color: '#2A9D8F',
+    posX: 52,
+    posY: 2.5,
+    width: 45.5,
+    height: 95,
+  },
+];
+
+/**
+ * Fetch all restaurant zones, auto-seeding if empty
+ */
+export async function getRestaurantZonesAction(): Promise<RestaurantZoneData[]> {
+  try {
+    let zones = await prisma.restaurantZone.findMany({
+      where: { isActive: true },
+      orderBy: { posX: 'asc' },
+    });
+
+    if (zones.length === 0) {
+      for (const z of DEFAULT_SEEDED_ZONES) {
+        await prisma.restaurantZone.create({
+          data: {
+            ...z,
+            isActive: true,
+          },
+        });
+      }
+      zones = await prisma.restaurantZone.findMany({
+        where: { isActive: true },
+        orderBy: { posX: 'asc' },
+      });
+    }
+
+    return zones.map((z) => ({
+      id: z.id,
+      code: z.code,
+      name: z.name,
+      subtitle: z.subtitle,
+      color: z.color,
+      posX: z.posX,
+      posY: z.posY,
+      width: z.width,
+      height: z.height,
+      isActive: z.isActive,
+    }));
+  } catch (err) {
+    console.error('Error fetching restaurant zones:', err);
+    return DEFAULT_SEEDED_ZONES.map((z, idx) => ({
+      id: `default-${idx}`,
+      ...z,
+      isActive: true,
+    }));
+  }
+}
+
+/**
+ * Save or update a restaurant zone
+ */
+export async function saveRestaurantZoneAction(data: {
+  id?: string;
+  code: string;
+  name: string;
+  subtitle?: string | null;
+  color?: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+}): Promise<{ success: boolean; zone?: RestaurantZoneData; error?: string }> {
+  try {
+    const color = data.color || '#D4A373';
+    let zone;
+    if (data.id && !data.id.startsWith('default-')) {
+      zone = await prisma.restaurantZone.update({
+        where: { id: data.id },
+        data: {
+          code: data.code,
+          name: data.name,
+          subtitle: data.subtitle,
+          color,
+          posX: data.posX,
+          posY: data.posY,
+          width: data.width,
+          height: data.height,
+        },
+      });
+    } else {
+      zone = await prisma.restaurantZone.upsert({
+        where: { code: data.code },
+        update: {
+          name: data.name,
+          subtitle: data.subtitle,
+          color,
+          posX: data.posX,
+          posY: data.posY,
+          width: data.width,
+          height: data.height,
+          isActive: true,
+        },
+        create: {
+          code: data.code,
+          name: data.name,
+          subtitle: data.subtitle,
+          color,
+          posX: data.posX,
+          posY: data.posY,
+          width: data.width,
+          height: data.height,
+          isActive: true,
+        },
+      });
+    }
+
+    revalidatePath('/staff');
+    return {
+      success: true,
+      zone: {
+        id: zone.id,
+        code: zone.code,
+        name: zone.name,
+        subtitle: zone.subtitle,
+        color: zone.color,
+        posX: zone.posX,
+        posY: zone.posY,
+        width: zone.width,
+        height: zone.height,
+        isActive: zone.isActive,
+      },
+    };
+  } catch (err: any) {
+    console.error('Error saving restaurant zone:', err);
+    return { success: false, error: err.message || 'Error al guardar la zona.' };
+  }
+}
+
+/**
+ * Delete a restaurant zone
+ */
+export async function deleteRestaurantZoneAction(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!id.startsWith('default-')) {
+      await prisma.restaurantZone.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      revalidatePath('/staff');
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error deleting restaurant zone:', err);
+    return { success: false, error: err.message || 'Error al eliminar la zona.' };
   }
 }
 
