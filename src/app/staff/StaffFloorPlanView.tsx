@@ -42,6 +42,7 @@ export default function StaffFloorPlanView({
   // Local optimistic tables state for 60fps/120fps fluid movement
   const [localTables, setLocalTables] = useState<RestaurantTableData[]>(tables);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  const [isHoldingTableId, setIsHoldingTableId] = useState<string | null>(null);
 
   // Dynamic Zones state
   const [zones, setZones] = useState<RestaurantZoneData[]>([]);
@@ -50,8 +51,11 @@ export default function StaffFloorPlanView({
   const canvasRef = useRef<HTMLDivElement>(null);
   const rafId = useRef<number | null>(null);
   const pendingPointer = useRef<{ clientX: number; clientY: number } | null>(null);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragStartInfo = useRef<{
     tableId: string;
+    tableNumber: string;
+    startTime: number;
     startClientX: number;
     startClientY: number;
     startPosX: number;
@@ -59,6 +63,7 @@ export default function StaffFloorPlanView({
     offsetX: number;
     offsetY: number;
     hasMoved: boolean;
+    isHolding: boolean;
   } | null>(null);
 
   // Sync local tables when parent tables change and user is not actively dragging
@@ -78,9 +83,13 @@ export default function StaffFloorPlanView({
     loadZones();
   }, [loadZones]);
 
-  // Clean up RAF on unmount
+  // Clean up RAF and timer on unmount
   useEffect(() => {
     return () => {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
       if (rafId.current !== null) {
         cancelAnimationFrame(rafId.current);
       }
@@ -93,10 +102,16 @@ export default function StaffFloorPlanView({
     ordersByTable.set(o.tableNumber, o);
   });
 
-  // Handle pointer down on a table: initiate high-performance drag
+  // Handle pointer down on a table: initiate click detection vs hold to drag
   const handleTablePointerDown = (e: React.PointerEvent, table: RestaurantTableData) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+
+    // Clear any pending hold timer
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
 
     const targetEl = e.currentTarget as HTMLElement;
     try {
@@ -115,6 +130,8 @@ export default function StaffFloorPlanView({
 
     dragStartInfo.current = {
       tableId: table.id,
+      tableNumber: table.tableNumber,
+      startTime: Date.now(),
       startClientX: e.clientX,
       startClientY: e.clientY,
       startPosX: table.posX,
@@ -122,9 +139,22 @@ export default function StaffFloorPlanView({
       offsetX,
       offsetY,
       hasMoved: false,
+      isHolding: false,
     };
 
-    setDraggingTableId(table.id);
+    // Hold timer: if pressed and held for >= 220ms, unlock table to drag and prevent click modal
+    holdTimerRef.current = setTimeout(() => {
+      if (dragStartInfo.current && dragStartInfo.current.tableId === table.id) {
+        dragStartInfo.current.isHolding = true;
+        setIsHoldingTableId(table.id);
+        setDraggingTableId(table.id);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate(25);
+          } catch (_) {}
+        }
+      }
+    }, 220);
   };
 
   // Handle pointer move: 60fps / 120fps requestAnimationFrame calculation
@@ -133,12 +163,26 @@ export default function StaffFloorPlanView({
 
     const deltaX = Math.abs(e.clientX - dragStartInfo.current.startClientX);
     const deltaY = Math.abs(e.clientY - dragStartInfo.current.startClientY);
+    const distance = Math.hypot(deltaX, deltaY);
 
-    if (deltaX > 2 || deltaY > 2) {
+    // If pointer moved more than 6px, immediately classify as drag and clear timer
+    if (distance > 6) {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
       dragStartInfo.current.hasMoved = true;
+      dragStartInfo.current.isHolding = true;
+      if (draggingTableId !== dragStartInfo.current.tableId) {
+        setDraggingTableId(dragStartInfo.current.tableId);
+        setIsHoldingTableId(dragStartInfo.current.tableId);
+      }
     }
 
-    if (!dragStartInfo.current.hasMoved) return;
+    // Only update position if holding or dragging
+    if (!dragStartInfo.current.isHolding && !dragStartInfo.current.hasMoved) {
+      return;
+    }
 
     pendingPointer.current = { clientX: e.clientX, clientY: e.clientY };
 
@@ -169,41 +213,58 @@ export default function StaffFloorPlanView({
     }
   };
 
-  // Handle pointer up: finalize position or trigger selection/PDA
+  // Handle pointer up: discriminate click (open modal) vs hold/drag (move table)
   const handleTablePointerUp = async (e: React.PointerEvent, table: RestaurantTableData) => {
+    e.stopPropagation();
     const targetEl = e.currentTarget as HTMLElement;
     try {
       targetEl.releasePointerCapture(e.pointerId);
     } catch (_) {}
 
-    const info = dragStartInfo.current;
-    dragStartInfo.current = null;
-    setDraggingTableId(null);
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
 
     if (rafId.current !== null) {
       cancelAnimationFrame(rafId.current);
       rafId.current = null;
     }
 
-    if (info && info.hasMoved) {
-      // It was a drag: persist new position to database
-      const movedTable = localTables.find((t) => t.id === info.tableId);
-      if (movedTable) {
-        await saveRestaurantTableAction({
-          id: movedTable.id,
-          tableNumber: movedTable.tableNumber,
-          name: movedTable.name,
-          zone: movedTable.zone,
-          seats: movedTable.seats,
-          shape: movedTable.shape,
-          color: movedTable.color || undefined,
-          posX: movedTable.posX,
-          posY: movedTable.posY,
-        });
-        onRefreshData();
+    const info = dragStartInfo.current;
+    dragStartInfo.current = null;
+    setDraggingTableId(null);
+    setIsHoldingTableId(null);
+
+    if (!info) return;
+
+    const elapsedTime = Date.now() - info.startTime;
+    const isHoldOrDrag = info.hasMoved || info.isHolding || elapsedTime >= 220;
+
+    if (isHoldOrDrag) {
+      // It was a HOLD or DRAG: DO NOT OPEN THE MODAL!
+      if (info.hasMoved) {
+        // Persist new position to database
+        const movedTable = localTables.find((t) => t.id === info.tableId);
+        if (movedTable) {
+          await saveRestaurantTableAction({
+            id: movedTable.id,
+            tableNumber: movedTable.tableNumber,
+            name: movedTable.name,
+            zone: movedTable.zone,
+            seats: movedTable.seats,
+            shape: movedTable.shape,
+            color: movedTable.color || undefined,
+            posX: movedTable.posX,
+            posY: movedTable.posY,
+          });
+          onRefreshData();
+        }
       }
+      // If only held in place without moving, do nothing (no modal, just released)
     } else {
-      // It was a tap / click:
+      // It was a CLEAN CLICK (< 220ms and no drag):
+      // OPEN THE MODAL!
       if (isDesignMode) {
         setSelectedTableForInspector(table);
         setIsSidebarOpen(true);
@@ -254,6 +315,13 @@ export default function StaffFloorPlanView({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Usage hint pill: click vs hold */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-50 border border-stone-200 text-[11px] text-stone-600 shadow-2xs">
+            <span className="font-bold text-[#9E2A2B]">💡 Clic:</span> comanda
+            <span className="text-stone-300">·</span>
+            <span className="font-bold text-[#9E2A2B]">Sostener:</span> mover mesa
+          </div>
+
           {/* Snap grid indicator badge */}
           {snapToGrid && (
             <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 text-[10.5px] font-semibold text-stone-600 border border-stone-200">
@@ -314,8 +382,8 @@ export default function StaffFloorPlanView({
           ref={canvasRef}
           onPointerMove={handleTablePointerMove}
           onPointerUp={(e) => {
-            if (draggingTableId) {
-              const table = localTables.find((t) => t.id === draggingTableId);
+            if (dragStartInfo.current) {
+              const table = localTables.find((t) => t.id === dragStartInfo.current?.tableId);
               if (table) handleTablePointerUp(e, table);
             }
           }}
@@ -414,14 +482,22 @@ export default function StaffFloorPlanView({
                   transform: 'translate(-50%, -50%)',
                   touchAction: 'none',
                 }}
-                className={`absolute transition-shadow ${
-                  isBeingDragged
-                    ? 'z-40 scale-105 cursor-grabbing shadow-2xl ring-4 ring-[#9E2A2B]/40'
+                className={`absolute select-none transition-[box-shadow,transform] duration-150 ${
+                  isBeingDragged || isHoldingTableId === table.id
+                    ? 'z-40 scale-105 cursor-grabbing shadow-2xl ring-4 ring-[#9E2A2B]'
                     : isSelected
                     ? 'z-30 ring-3 ring-[#9E2A2B] shadow-xl'
-                    : 'z-20 cursor-grab'
+                    : 'z-20 cursor-pointer'
                 }`}
               >
+                {/* Floating moving badge while holding / dragging */}
+                {(isBeingDragged || isHoldingTableId === table.id) && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-[#9E2A2B] text-white text-[9px] font-bold rounded-full shadow-lg flex items-center gap-1 whitespace-nowrap z-50 pointer-events-none animate-bounce">
+                    <Move className="w-2.5 h-2.5" />
+                    <span>Moviendo</span>
+                  </div>
+                )}
+
                 <div
                   className={`relative border-2 flex flex-col items-center justify-center p-1.5 shadow-md transition-transform hover:scale-102 ${shapeClasses} ${statusBorder}`}
                 >
